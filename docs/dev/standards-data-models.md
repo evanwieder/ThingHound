@@ -151,17 +151,31 @@ Raw primitives do not cross domain boundaries. Wrap them.
 
 ---
 
-## CRR/LOG/LOCAL Classification
+## Sync Class Classification
 
 Every entity in the logical model carries a sync class — a behavioral, domain-level property:
 
-**CRR** — synced. Conflict-free replicated. Every CRR entity carries `created_by_user_id: UUID (optional)` and `updated_by_user_id: UUID (optional)`. Natural-key uniqueness (SKU, name, MPN) is a business constraint enforced by the service layer — not a database constraint — because CRDT merge cannot guarantee uniqueness across devices.
+**CRR** — synced. Conflict-free replicated. Every CRR entity carries `created_by_user_id: UUID (optional)` and `updated_by_user_id: UUID (optional)`. Natural-key uniqueness is a business constraint enforced by the service layer.
 
 **LOG** — append-only synced. Insert-only; never updated or deleted after creation. Every LOG entity carries `user_id: UUID (optional)`. Domain models for LOG entities have no `update()` method.
 
 **LOCAL** — device-only. Never synced. Rebuilt from CRR/LOG after every sync merge. No attribution required.
 
-The physical constraints that CRR/LOG status imposes on SQLite DDL (DEFAULT on NOT NULL columns, no cross-column CHECK, etc.) are documented in `thinghound-architecture.md` §9 and enforced by the CI guard. They are physical implementation details of the SQLite + cr-sqlite substrate, not logical model concerns.
+**REF** — reference data. Application-defined code table values seeded by migrations. Identical on every device. Does not sync. Read-only at runtime. No attribution columns.
+
+The physical constraints that CRR/LOG status imposes on SQLite DDL (DEFAULT on NOT NULL columns, no cross-column CHECK, etc.) are documented in `thinghound-architecture.md` §9. They are physical implementation details of the SQLite + cr-sqlite substrate, not logical model concerns.
+
+---
+
+## Code Tables — No Native Enum Types
+
+Domain-constrained string values use the **code table pattern** — never a native enum type. Enum types are not consistently supported across all target DBMSs and are not used here.
+
+Each code table is a **REF** entity with three attributes: `code TEXT` (primary key, single character), `name TEXT` (display name), `description TEXT`. Referencing entities rename the column to `<field>_code` (e.g., `value_type_code`) and type it as `String`.
+
+In Python domain models, a `*_code` field is typed as `String` referencing the corresponding code entity. Valid code values are documented in the data model spec §3. The service layer validates `*_code` values against the code table on write.
+
+Do not use Pydantic `Literal[...]` or Python `Enum` as the domain type for code fields. The code table is the authority; Pydantic validation should check against the loaded code table values, not a hardcoded literal set.
 
 ---
 

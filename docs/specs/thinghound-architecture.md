@@ -153,6 +153,7 @@ cr-sqlite turns CRR and LOG tables into conflict-free replicated relations with 
 - **CRR** — catalog, schema, configuration, items, attribute values, vendors, BOMs, synced app settings.
 - **LOG** — inventory events, instance measurements, offer history, audit log. Insert-only; no conflicts on write; merge trivially.
 - **LOCAL** — device settings, all derived/cached tables. Never synced. Rebuilt after merge.
+- **REF** — code tables (reference data). Application-defined values seeded by migrations. Identical on every device. Does not sync. Read-only at runtime.
 
 ### 6.3 Identity
 

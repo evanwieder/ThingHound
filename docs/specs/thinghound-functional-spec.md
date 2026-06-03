@@ -39,7 +39,7 @@ Windows, macOS, Linux. Single install; no external server required for core use.
 | **Attribute Category** | A user-defined grouping of attribute definitions (e.g., Electrical, Physical, Mechanical, Thermal). Purely organizational — attributes with the same name in different attribute categories are distinct entities with independent types, units, and scales. |
 | **Attribute Definition** | A named, typed, measurable property within one attribute category. Identity is `(name, attribute_category)`. |
 | **Attribute Set** | The set of attribute definitions assigned to a category, with per-attribute settings (required flag, sort order, default value). Settings inherit down the category tree; values never inherit. Prepopulates the item entry UI but does not hard-constrain which attributes an item may carry. |
-| **Attribute Type** | The kind of value an attribute holds: `numeric`, `string`, `enum`, `boolean`, `url`, `file`, `composite`. |
+| **Attribute Type** | The kind of value an attribute holds. Stored as a code referencing the `value_type` code table: `N`=Numeric (exact decimal with units), `I`=Integer (whole number only), `S`=String, `E`=Enum (from a defined choice set), `B`=Boolean, `U`=URL, `F`=File, `C`=Composite (multiple named components). Integer and Numeric are distinct — some attributes only permit whole-number values. |
 | **Attribution** | Every CRR row carries `created_by_user_id` and `updated_by_user_id`; every LOG row carries `user_id`. Recorded from day one so multi-user history is preserved without migration. |
 | **Audit Log** | Append-only record of changes to mutable CRR rows. Off by default in single-user mode; enabled when a second user is added. |
 | **Availability Status** | Current stock state of a vendor offer: `IN_STOCK`, `OUT_OF_STOCK`, `BACKORDER`, `LEAD_TIME`, `DISCONTINUED`, `UNKNOWN`. |
@@ -121,7 +121,7 @@ Windows, macOS, Linux. Single install; no external server required for core use.
 
 - **Attribute categories** are user-defined groupings (e.g., Electrical, Physical, Thermal). Each attribute definition belongs to exactly one attribute category. Two attributes with the same name in different attribute categories are distinct entities with independent types, units, and scales.
 - **Attribute definitions** carry: name, attribute category, value type, optional unit dimension, scale (per attribute, not per dimension), preferred display unit, optional constraints, optional composite display template.
-- **Value types:** `numeric`, `string`, `enum`, `boolean`, `url`, `file`, `composite`.
+- **Value types** (codes from the `value_type` reference table): `N`=Numeric (exact decimal, supports units and scale), `I`=Integer (whole number only, supports units and scale), `S`=String, `E`=Enum (from a defined choice set via `attribute_enum_value`), `B`=Boolean, `U`=URL, `F`=File, `C`=Composite. Integer and Numeric are distinct types — an attribute typed Integer rejects fractional input.
 - **Composite attributes** hold named components, each itself a typed value with its own unit dimension, scale, and display unit. Components are individually stored, indexed, sortable, and filterable.
 - **Category attribute sets** define which attribute definitions are relevant for a category with per-attribute settings: required flag, sort order, default value. These settings inherit down the category tree; values never inherit.
 - An item missing a required category attribute is flagged as incomplete but is not prevented from saving. Required is a UI hint and validation state, not a hard data constraint.

@@ -3,7 +3,7 @@
 **Date:** 2026-06-03
 **Companion documents:** `thinghound-functional-spec.md`, `thinghound-architecture.md`
 
-This document is the **logical data model** — it describes domain entities, their attributes, relationships, and constraints in database-agnostic terms. Physical representation (column types, encoding, DDL constraints) is a mapper concern and is documented in `thinghound-architecture.md` under the Type Mapping section. No DBMS-specific types or syntax appear here.
+This document is the **logical data model** — it describes domain entities, their attributes, relationships, and constraints in database-agnostic terms. Physical representation (column types, encoding, DDL constraints) is a mapper concern documented in `thinghound-architecture.md` §9. No DBMS-specific types or syntax appear here.
 
 ---
 
@@ -17,11 +17,11 @@ All primary keys are **UUID** (UUIDv7 — time-ordered, collision-free across de
 
 **No floating-point anywhere.** Numeric attribute values are stored as exact **Decimal** in base units. The physical encoding on SQLite uses a dual-column representation (scaled integer + exact text); on Postgres a single NUMERIC column suffices. The logical model uses `Decimal` throughout. The mapper handles the encoding.
 
-A `scale` property on each `attribute_definition` specifies the number of significant decimal places used for comparison, indexing, and precision. This is a domain concept — it drives the physical precision per DBMS. Two attributes in the same dimension may have different scales for different practical ranges (e.g., `Current` at scale 12 for pA resolution, `Current-High` at scale 3 for industrial range).
+A `scale` property on each `attribute_definition` specifies the number of significant decimal places used for comparison, indexing, and precision. This is a domain concept — it drives the physical precision per DBMS. Two attributes in the same dimension may have different scales for different practical ranges.
 
 ### Money
 
-Money is a `Money` value: an exact decimal amount paired with an ISO 4217 currency code. Physical encoding is DBMS-specific (SQLite uses integer minor units + currency text). The logical model uses `Money` throughout; the mapper handles encoding and decoding.
+Money is a `Money` value: an exact decimal amount paired with an ISO 4217 currency code. Physical encoding is DBMS-specific. The mapper handles encoding and decoding.
 
 ### Timestamps and Ordering
 
@@ -29,23 +29,35 @@ Timestamps are ISO-8601 `Timestamp`. The `HLC` (Hybrid Logical Clock) type is a 
 
 ### Sync Classes
 
-Every table is annotated with its sync class — a behavioral, not physical, property:
+Every entity is annotated with its sync class — a behavioral, not physical, property:
 
 - **CRR** — Conflict-free Replicated Relation. Synced across devices via cr-sqlite. Column-level last-writer-wins merge by causal metadata.
 - **LOG** — Append-only CRR. Insert-only; never updated or deleted after creation. Merges trivially.
 - **LOCAL** — Device-only. Never synced. Rebuilt from CRR/LOG sources after every sync merge.
+- **REF** — Reference data. Application-defined values seeded by migrations. Read-only at runtime. Identical on every device; does not sync.
+
+### Code Table Pattern — No Native Enum Types
+
+Neither SQLite nor all target DBMSs support native enum types consistently. All domain-constrained string values use the **code table pattern** for portability and extensibility:
+
+- A reference entity named for what one row represents (e.g., `value_type`, `event_type`). Sync class: **REF**.
+- `code TEXT` — primary key, single character, application-defined.
+- `name TEXT` — the full display name of the code value.
+- `description TEXT` — explanation of the code's meaning and usage.
+
+In referencing entities, the column is renamed to `<field>_code` (e.g., `value_type_code`) and its type is `String` referencing the corresponding code table. All code tables are listed in §3.
 
 ### Attribution
 
-Every **CRR** entity carries `created_by_user_id: UUID (optional)` and `updated_by_user_id: UUID (optional)`. Every **LOG** entity carries `user_id: UUID (optional)`. All reference the `user` entity. Default to the seeded local user in v1 so multi-user can be enabled later without migrating historical data. Attribution columns are omitted from individual entity listings below for brevity but are present on all CRR and LOG entities.
+Every **CRR** entity carries `created_by_user_id: UUID (optional)` and `updated_by_user_id: UUID (optional)`. Every **LOG** entity carries `user_id: UUID (optional)`. Attribution columns are omitted from individual entity listings below for brevity but are present on all CRR and LOG entities.
 
 ### Soft Delete
 
-Most catalog and configuration entities use a `deleted_at: Timestamp (optional)` tombstone. `NULL` = active; a timestamp = soft-deleted. Tombstones propagate correctly under sync. Events are never deleted (append-only).
+Most catalog and configuration entities use a `deleted_at: Timestamp (optional)` tombstone. `NULL` = active; a timestamp = soft-deleted. Events are never deleted (append-only).
 
 ### Natural-Key Uniqueness
 
-Uniqueness on natural keys (SKU, MPN, manufacturer name, attribute name within category) is a business constraint enforced by the service layer at write time. Under sync, two devices may independently create records with the same natural key; collisions are detected by the post-merge integrity check and quarantined for user resolution.
+Uniqueness on natural keys (SKU, MPN, manufacturer name, attribute name within category) is a business constraint enforced by the service layer. Under sync, collisions are detected by the post-merge integrity check and quarantined for user resolution.
 
 ---
 
@@ -62,12 +74,275 @@ Uniqueness on natural keys (SKU, MPN, manufacturer name, attribute name within c
 | `Date` | ISO-8601 date |
 | `HLC` | Hybrid Logical Clock value (causal timestamp) |
 | `Money` | Exact decimal amount + ISO 4217 currency code |
-| `Enum(…)` | String constrained to a defined set of values |
 | `JSON` | Structured data — used only for genuinely free-form content |
+
+`Enum(…)` does not appear in this model. All domain-constrained string values are `String` columns referencing a code table (see §3 and the Code Table Pattern in §1).
 
 ---
 
-## 3. Configuration & Schema
+## 3. Reference Data / Code Tables (REF)
+
+Each table has `code TEXT PRIMARY KEY`, `name TEXT`, `description TEXT`. Seeded by migrations; read-only at runtime.
+
+### `value_type`
+The kind of value an attribute holds.
+
+| code | name | description |
+|------|------|-------------|
+| N | Numeric | Exact decimal value with units; supports scale, display unit, and dimensional conversion |
+| I | Integer | Whole-number-only value; no fractional component permitted |
+| S | String | Free-text value |
+| E | Enum | Value selected from a defined set of choices (`attribute_enum_value`) |
+| B | Boolean | True or false |
+| U | URL | Web address |
+| F | File | Attachment reference |
+| C | Composite | Multiple named component values; renders via display template |
+
+### `value_kind_hint`
+Editor display hint for a Display Column.
+
+| code | name | description |
+|------|------|-------------|
+| N | Numeric | Column holds numeric values; show numeric editor |
+| T | Text | Column holds text values; show text editor |
+| A | Any | Column type is mixed or unknown |
+
+### `source_layer`
+Which value layer a column mapping reads from.
+
+| code | name | description |
+|------|------|-------------|
+| C | Catalog | Read the item's nominal catalog attribute value |
+| I | Instance Measurement | Read an aggregate over the item's instance measurements |
+
+### `aggregate_function`
+Aggregation applied to instance measurements for a column mapping.
+
+| code | name | description |
+|------|------|-------------|
+| N | Min | Minimum measured value across instances |
+| X | Max | Maximum measured value across instances |
+| A | Average | Mean measured value across instances |
+| C | Count | Number of instances with a measured value |
+| R | Range | Difference between max and min measured values |
+
+### `grid_scope`
+Scope of a Grid Configuration.
+
+| code | name | description |
+|------|------|-------------|
+| G | Global | Applies across all categories (the all-items grid) |
+| C | Category | Applies when a specific category is selected |
+
+### `instance_display`
+How individuated instances are shown in the grid.
+
+| code | name | description |
+|------|------|-------------|
+| A | Aggregated | One row per item; instance measurements shown as aggregates |
+| E | Expanded | Individuated members shown as child rows under their parent item |
+
+### `sort_direction`
+Direction of a column sort in a Grid Configuration.
+
+| code | name | description |
+|------|------|-------------|
+| A | Ascending | Lowest to highest |
+| D | Descending | Highest to lowest |
+
+### `lifecycle_status`
+Catalog lifecycle state of an item.
+
+| code | name | description |
+|------|------|-------------|
+| A | Active | Current production item; safe for new designs |
+| N | NRND | Not recommended for new designs; still available |
+| O | Obsolete | Discontinued; surface replacements in BOMs and procurement |
+| U | Unknown | Lifecycle status not determined |
+
+### `stock_mode`
+Per-item receipt default — how incoming stock is handled.
+
+| code | name | description |
+|------|------|-------------|
+| B | Bulk | Receipts go to the anonymous pool |
+| I | Instance | Receipts create individually tracked instances |
+
+### `instance_kind`
+The kind of tracked instance created on receipt or individuation.
+
+| code | name | description |
+|------|------|-------------|
+| S | Serial | Unique unit; quantity always 1 |
+| L | Lot | Batch with a quantity that may be partially consumed |
+
+### `relationship_type`
+Type of directed relationship between two items.
+
+| code | name | description |
+|------|------|-------------|
+| X | Exact Replacement | Drop-in replacement; safe to substitute automatically |
+| A | Alternate | Non-exact; applicable with conditions |
+| E | Equivalent | Interchangeable both ways |
+| M | Alternate MPN | Same physical part under a different manufacturer part number |
+
+### `provenance`
+Source of an attribute value.
+
+| code | name | description |
+|------|------|-------------|
+| T | Template | Copied from a product series |
+| N | Nominal | User-entered specification |
+| U | User | Manually set or overridden |
+| M | Measured | Recorded from an instrument |
+| O | Observed | Visually confirmed |
+| V | Tested | Functionally verified |
+| D | Datasheet Extracted | Parsed from a PDF datasheet |
+| C | Computed | Derived by a formula |
+
+### `instance_status`
+Current status of a tracked instance.
+
+| code | name | description |
+|------|------|-------------|
+| A | Available | Ready for use |
+| S | Assigned | Allocated to a project |
+| C | Consumed | Used up |
+| W | Waste | Damaged or scrapped |
+| L | Lost | Unaccounted for |
+
+### `event_type`
+Type of inventory event.
+
+| code | name | description |
+|------|------|-------------|
+| A | Add | Receipt of stock |
+| C | Consume | Use for a project or bench |
+| M | Move | Transfer between storage locations |
+| I | Individuate | Promote bulk units to tracked instances |
+| D | Adjust | Audit correction; reason required |
+| W | Waste | Damaged, expired, or scrapped |
+| L | Lost | Unaccounted for |
+
+### `project_status`
+Current status of a project.
+
+| code | name | description |
+|------|------|-------------|
+| A | Active | Work in progress |
+| C | Completed | Work finished |
+| R | Archived | Closed and archived; no further activity expected |
+
+### `match_status`
+Match state of an invoice line during import reconciliation.
+
+| code | name | description |
+|------|------|-------------|
+| P | Pending | Not yet processed |
+| M | Matched | Matched to an existing item or offer |
+| N | New | Will create a new item on commit |
+| I | Ignored | Excluded from import (e.g., shipping charge) |
+
+### `import_kind`
+Type of import template.
+
+| code | name | description |
+|------|------|-------------|
+| I | Invoice | Vendor invoice column mapping |
+| B | BOM | Bill of Materials column mapping |
+
+### `availability_status`
+Current stock availability of a vendor offer.
+
+| code | name | description |
+|------|------|-------------|
+| I | In Stock | Available for immediate shipment |
+| O | Out of Stock | Temporarily unavailable |
+| B | Backorder | Available but with a delay |
+| L | Lead Time | Available to order with a specified lead time |
+| D | Discontinued | Vendor no longer stocks this item |
+| U | Unknown | Availability not determined |
+
+### `bom_status`
+Lifecycle status of a BOM revision.
+
+| code | name | description |
+|------|------|-------------|
+| D | Draft | In preparation; may be edited |
+| R | Released | Approved for production; immutable |
+| O | Obsolete | Superseded by a newer revision |
+
+### `build_status`
+Current status of a build.
+
+| code | name | description |
+|------|------|-------------|
+| P | Planned | Scheduled but not started |
+| I | In Progress | Stock consumption in progress |
+| C | Completed | Build finished; production quantities recorded |
+| X | Cancelled | Build abandoned |
+
+### `formula_layer`
+Which value layer a formula input reads from.
+
+| code | name | description |
+|------|------|-------------|
+| C | Catalog | Use the item's nominal catalog value |
+| I | Instance | Use the latest instance measurement |
+| E | Either | Use instance measurement if present, otherwise catalog value |
+
+### `ltspice_template_type`
+Type of LTspice model template.
+
+| code | name | description |
+|------|------|-------------|
+| M | Model | .model statement |
+| S | Subckt | .subckt definition |
+| Y | Symbol | Symbol file (.asy) |
+| P | Params | .param statements |
+
+### `extraction_status`
+Review status of a datasheet extraction candidate.
+
+| code | name | description |
+|------|------|-------------|
+| P | Pending | Awaiting user review |
+| A | Accepted | Approved and written to the catalog |
+| R | Rejected | Discarded |
+
+### `attachment_owner_type`
+The type of entity an attachment belongs to.
+
+| code | name | description |
+|------|------|-------------|
+| I | Item | Catalog item |
+| N | Instance | Tracked instance or lot |
+| V | Vendor | Vendor record |
+| M | Manufacturer | Manufacturer record |
+
+### `attachment_role`
+The role or purpose of an attachment.
+
+| code | name | description |
+|------|------|-------------|
+| P | Photo | Product image |
+| D | Datasheet | Technical datasheet |
+| O | Document | Other document (application note, errata, etc.) |
+| M | Model | Simulation model file |
+| X | Other | Uncategorized attachment |
+
+### `audit_action`
+The type of change recorded in an audit log entry.
+
+| code | name | description |
+|------|------|-------------|
+| C | Create | A new record was created |
+| U | Update | An existing record was modified |
+| D | Delete | A record was soft-deleted |
+
+---
+
+## 4. Configuration & Schema
 
 ### `attribute_category` (CRR)
 A user-defined grouping of attribute definitions (Electrical, Physical, Mechanical, Thermal, etc.).
@@ -119,7 +394,7 @@ A specific named unit within a dimension (including the base unit itself).
 | `id` | UUID | Yes | |
 | `dimension_id` | UUID | Yes | FK to `unit_dimension` |
 | `name` | String | Yes | Primary name: e.g., Ohm, Foot |
-| `alt_names` | JSON | No | Array of alternate names: ["Amp"] for Ampere |
+| `alt_names` | JSON | No | Array of alternate names |
 | `symbol` | String | Yes | e.g., Ω, ft |
 | `plural` | String | No | e.g., Ohms, Feet |
 | `alt_plurals` | JSON | No | Array of alternate plurals |
@@ -135,13 +410,13 @@ A named, typed, measurable property within one attribute category. Two attribute
 | `id` | UUID | Yes | |
 | `attribute_category_id` | UUID | Yes | FK to `attribute_category` |
 | `name` | String | Yes | Soft-unique within its attribute category |
-| `value_type` | Enum(numeric, string, enum, boolean, url, file, composite) | Yes | |
+| `value_type_code` | String | Yes | FK to `value_type`; N/I/S/E/B/U/F/C |
 | `description` | String | No | |
-| `unit_dimension_id` | UUID | No | FK to `unit_dimension`; set for numeric |
+| `unit_dimension_id` | UUID | No | FK to `unit_dimension`; set for Numeric and Integer types |
 | `scale` | Integer | Yes | Decimal places for value precision and comparison |
 | `display_unit_id` | UUID | No | FK to `unit_multiplier`; preferred entry/display unit |
 | `constraints` | JSON | No | Free-form: min, max, regex |
-| `display_template` | String | No | Jinja2; for composite attributes |
+| `display_template` | String | No | Jinja2; for Composite type |
 | `deleted_at` | Timestamp | No | |
 
 ### `attribute_allowed_prefix` (CRR)
@@ -154,7 +429,7 @@ Which prefixes are selectable for entry on a specific numeric attribute.
 | `prefix_id` | UUID | Yes | FK to `prefix` |
 
 ### `attribute_enum_value` (CRR)
-Ordered members of an enum-type attribute.
+Ordered members of an Enum-type attribute.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
@@ -166,7 +441,7 @@ Ordered members of an enum-type attribute.
 | `deleted_at` | Timestamp | No | |
 
 ### `attribute_component` (CRR)
-A named component within a composite attribute.
+A named component within a Composite attribute.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
@@ -174,7 +449,7 @@ A named component within a composite attribute.
 | `attribute_id` | UUID | Yes | FK to composite `attribute_definition` |
 | `key` | String | Yes | e.g., length, diameter, width |
 | `label` | String | No | |
-| `value_type` | Enum(numeric, string, enum, boolean, url) | Yes | |
+| `value_type_code` | String | Yes | FK to `value_type`; N/I/S/E/B/U only |
 | `unit_dimension_id` | UUID | No | |
 | `scale` | Integer | Yes | |
 | `display_unit_id` | UUID | No | |
@@ -183,7 +458,7 @@ A named component within a composite attribute.
 
 ---
 
-## 4. Category
+## 5. Category
 
 ### `category` (CRR)
 A node in the single-parent category tree. Ancestry queries use recursive CTEs on the indexed `parent_id` relationship.
@@ -213,7 +488,7 @@ No `is_inherited` attribute. Inheritance is computed at runtime from the categor
 
 ---
 
-## 5. Display & Grid
+## 6. Display & Grid
 
 ### `display_column` (CRR)
 A global, user-defined named grid column slot shared across all categories.
@@ -224,7 +499,7 @@ A global, user-defined named grid column slot shared across all categories.
 | `name` | String | Yes | |
 | `position` | Integer | Yes | Global order |
 | `default_width` | Integer | No | |
-| `value_kind_hint` | Enum(NUMERIC, TEXT, ANY) | No | Editor hint |
+| `value_kind_hint_code` | String | No | FK to `value_kind_hint`; N/T/A |
 | `is_hero` | Boolean | Yes | Pinned/prominent column |
 | `item_field_key` | String | No | When set: binds to a universal item field (sku, name, on_hand, markings, etc.) |
 | `deleted_at` | Timestamp | No | |
@@ -239,8 +514,8 @@ Binds a Display Column to a mapping target for a specific category. Soft-unique 
 | `display_column_id` | UUID | Yes | FK to `display_column` |
 | `attribute_id` | UUID | No | Direct attribute binding |
 | `component_id` | UUID | No | Specific composite component |
-| `source_layer` | Enum(CATALOG, INSTANCE_MEASUREMENT) | Yes | |
-| `aggregate` | Enum(MIN, MAX, AVG, COUNT, RANGE) | No | For INSTANCE_MEASUREMENT source |
+| `source_layer_code` | String | Yes | FK to `source_layer`; C/I |
+| `aggregate_code` | String | No | FK to `aggregate_function`; N/X/A/C/R; set when source layer = I |
 | `display_formula` | String | No | Expression; when set, overrides direct binding |
 
 ### `display_profile` (CRR)
@@ -259,9 +534,9 @@ A named, savable grid layout.
 |-----------|------|----------|-------|
 | `id` | UUID | Yes | |
 | `name` | String | Yes | |
-| `scope` | Enum(GLOBAL, CATEGORY) | Yes | |
-| `category_id` | UUID | No | FK to `category`; set when scope = CATEGORY |
-| `instance_display` | Enum(AGGREGATED, EXPANDED) | Yes | |
+| `scope_code` | String | Yes | FK to `grid_scope`; G/C |
+| `category_id` | UUID | No | FK to `category`; set when scope = C |
+| `instance_display_code` | String | Yes | FK to `instance_display`; A/E |
 | `filter` | JSON | No | Saved predicate tree |
 | `created_at` | Timestamp | Yes | |
 | `deleted_at` | Timestamp | No | |
@@ -277,7 +552,7 @@ Visible columns and display settings for a Grid Configuration.
 | `width` | Integer | No | |
 | `is_pinned` | Boolean | Yes | |
 | `sort_priority` | Integer | No | |
-| `sort_direction` | Enum(ASC, DESC) | No | |
+| `sort_direction_code` | String | No | FK to `sort_direction`; A/D |
 
 ### `grid_configuration_grouping` (CRR)
 Ordered group-by levels for a Grid Configuration.
@@ -290,7 +565,7 @@ Ordered group-by levels for a Grid Configuration.
 
 ---
 
-## 6. Identity & Series
+## 7. Identity & Series
 
 ### `manufacturer` (CRR)
 
@@ -330,7 +605,7 @@ Default attribute values for a product series, auto-populated to new items.
 
 ---
 
-## 7. Core Item
+## 8. Core Item
 
 ### `item` (CRR)
 The abstract catalog item — the orderable, reusable entity.
@@ -344,9 +619,9 @@ The abstract catalog item — the orderable, reusable entity.
 | `part_number` | String | No | MPN or GPN |
 | `series_id` | UUID | No | FK to `product_series` |
 | `primary_category_id` | UUID | No | FK to `category`; single-cell primary |
-| `lifecycle_status` | Enum(ACTIVE, NRND, OBSOLETE, UNKNOWN) | Yes | |
-| `stock_mode` | Enum(BULK, INSTANCE) | Yes | Receipt default |
-| `instance_kind` | Enum(SERIAL, LOT) | Yes | Applied when creating instances |
+| `lifecycle_status_code` | String | Yes | FK to `lifecycle_status`; A/N/O/U |
+| `stock_mode_code` | String | Yes | FK to `stock_mode`; B/I |
+| `instance_kind_code` | String | Yes | FK to `instance_kind`; S/L |
 | `stock_unit_dimension_id` | UUID | No | FK to `unit_dimension`; NULL = dimensionless count |
 | `reorder_point` | Decimal | No | In stock units |
 | `reorder_qty` | Decimal | No | In stock units |
@@ -386,15 +661,15 @@ Directed, ranked alternatives and equivalence graph. Relationships exist at any 
 | `id` | UUID | Yes | |
 | `item_id` | UUID | Yes | FK to `item`; source |
 | `related_item_id` | UUID | Yes | FK to `item`; target |
-| `type` | Enum(EXACT_REPLACEMENT, ALTERNATE, EQUIVALENT, ALTERNATE_MPN) | Yes | |
-| `symmetric` | Boolean | Yes | True = applies both ways (e.g., EQUIVALENT) |
+| `relationship_type_code` | String | Yes | FK to `relationship_type`; X/A/E/M |
+| `symmetric` | Boolean | Yes | True = applies both ways |
 | `rank` | Integer | Yes | Preference order among multiple alternatives |
 | `conditions` | String | No | Conditions for non-exact alternates |
 | `notes` | String | No | |
 
 ---
 
-## 8. Attribute Values
+## 9. Attribute Values
 
 ### `item_attribute_value` (CRR)
 Catalog-layer attribute values on an item. One row per `(item, attribute)`.
@@ -403,18 +678,18 @@ Catalog-layer attribute values on an item. One row per `(item, attribute)`.
 |-----------|------|----------|-------|
 | `item_id` | UUID | Yes | PK part; FK to `item` |
 | `attribute_id` | UUID | Yes | PK part; FK to `attribute_definition` |
-| `value` | Decimal | No | Numeric value in base units (numeric attributes) |
-| `value_text` | String | No | For string / enum / boolean / url attributes |
+| `value` | Decimal | No | Numeric value in base units (Numeric and Integer attributes) |
+| `value_text` | String | No | For String / Enum / Boolean / URL attributes |
 | `display_unit` | String | No | Symbol of the unit the value was entered in |
 | `value_raw` | JSON | No | Original entry preserved for round-trip display |
-| `provenance` | Enum(TEMPLATE, NOMINAL, USER, MEASURED, OBSERVED, TESTED, DATASHEET_EXTRACTED, COMPUTED) | Yes | |
+| `provenance_code` | String | Yes | FK to `provenance`; T/N/U/M/O/V/D/C |
 | `provenance_context` | JSON | No | Source detail (PDF sha256, page, bbox, etc.) |
 | `updated_at` | Timestamp | Yes | |
 
 Tolerance is not a field here. It is a separate attribute definition in the appropriate dimension.
 
 ### `item_attribute_component_value` (CRR)
-Per-component values for composite attributes. One row per `(item, attribute, component)`.
+Per-component values for Composite attributes. One row per `(item, attribute, component)`.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
@@ -425,7 +700,7 @@ Per-component values for composite attributes. One row per `(item, attribute, co
 | `value_text` | String | No | |
 | `display_unit` | String | No | |
 | `value_raw` | JSON | No | |
-| `provenance` | Enum(TEMPLATE, NOMINAL, USER, MEASURED, OBSERVED, TESTED, DATASHEET_EXTRACTED, COMPUTED) | Yes | |
+| `provenance_code` | String | Yes | FK to `provenance`; T/N/U/M/O/V/D/C |
 | `provenance_context` | JSON | No | |
 | `updated_at` | Timestamp | Yes | |
 
@@ -441,7 +716,7 @@ Append-only measured values for tracked instances.
 | `value_text` | String | No | |
 | `display_unit` | String | No | |
 | `value_raw` | JSON | No | |
-| `provenance` | Enum(MEASURED, OBSERVED, TESTED) | Yes | |
+| `provenance_code` | String | Yes | FK to `provenance`; M/O/V only |
 | `provenance_context` | JSON | No | |
 | `instrument` | String | No | |
 | `measured_at` | Timestamp | Yes | |
@@ -450,7 +725,7 @@ Append-only measured values for tracked instances.
 
 ---
 
-## 9. Instances
+## 10. Instances
 
 ### `item_instance` (CRR)
 A tracked physical unit or batch.
@@ -460,9 +735,9 @@ A tracked physical unit or batch.
 | `id` | UUID | Yes | |
 | `item_id` | UUID | Yes | FK to `item` |
 | `instance_ref` | String | No | Label / serial number |
-| `instance_kind` | Enum(SERIAL, LOT) | Yes | |
+| `instance_kind_code` | String | Yes | FK to `instance_kind`; S/L |
 | `qty_initial` | Decimal | Yes | Initial quantity |
-| `status` | Enum(AVAILABLE, ASSIGNED, CONSUMED, WASTE, LOST) | Yes | |
+| `status_code` | String | Yes | FK to `instance_status`; A/S/C/W/L |
 | `current_location_id` | UUID | No | FK to `location`; cached from events |
 | `acquisition_event_id` | UUID | No | FK to `inventory_event` |
 | `barcode` | String | No | |
@@ -471,7 +746,7 @@ A tracked physical unit or batch.
 
 ---
 
-## 10. Events & Costing
+## 11. Events & Costing
 
 ### `inventory_event` (LOG)
 Immutable inventory fact. Insert-only.
@@ -481,7 +756,7 @@ Immutable inventory fact. Insert-only.
 | `id` | UUID | Yes | |
 | `item_id` | UUID | Yes | FK to `item` |
 | `instance_id` | UUID | No | FK to `item_instance`; NULL = bulk pool |
-| `event_type` | Enum(ADD, CONSUME, MOVE, INDIVIDUATE, ADJUST, WASTE, LOST) | Yes | |
+| `event_type_code` | String | Yes | FK to `event_type`; A/C/M/I/D/W/L |
 | `qty_change` | Decimal | Yes | Signed; negative for consumption/waste/loss |
 | `qty_unit` | String | No | Unit symbol if continuous stock |
 | `unit_cost_at_purchase` | Money | No | Acquisition cost per unit (per costing method) |
@@ -521,7 +796,7 @@ Exchange rate for multi-currency cost roll-ups.
 
 ---
 
-## 11. Projects
+## 12. Projects
 
 ### `project` (CRR)
 A named work context that consumption events are linked to. Distinct from the physical location hierarchy.
@@ -531,13 +806,13 @@ A named work context that consumption events are linked to. Distinct from the ph
 | `id` | UUID | Yes | |
 | `name` | String | Yes | |
 | `description` | String | No | |
-| `status` | Enum(ACTIVE, COMPLETED, ARCHIVED) | Yes | |
+| `status_code` | String | Yes | FK to `project_status`; A/C/R |
 | `created_at` | Timestamp | Yes | |
 | `deleted_at` | Timestamp | No | |
 
 ---
 
-## 12. Invoices
+## 13. Invoices
 
 ### `invoice` (CRR)
 
@@ -563,7 +838,7 @@ A named work context that consumption events are linked to. Distinct from the ph
 | `description` | String | No | |
 | `qty` | Decimal | Yes | |
 | `unit_price` | Money | No | |
-| `match_status` | Enum(PENDING, MATCHED, NEW, IGNORED) | Yes | |
+| `match_status_code` | String | Yes | FK to `match_status`; P/M/N/I |
 | `item_id` | UUID | No | FK to `item`; resolved match |
 | `vendor_offer_id` | UUID | No | FK to `vendor_offer` |
 | `raw_data` | JSON | No | Original row preserved |
@@ -578,11 +853,11 @@ Saved column-mapping template for a vendor's invoice or BOM format.
 | `name` | String | Yes | |
 | `header_signature` | String | Yes | Hash/key for auto-detection |
 | `mapping` | JSON | Yes | Header → field map |
-| `kind` | Enum(INVOICE, BOM) | Yes | |
+| `kind_code` | String | Yes | FK to `import_kind`; I/B |
 
 ---
 
-## 13. Vendors & Pricing
+## 14. Vendors & Pricing
 
 ### `vendor` (CRR)
 
@@ -608,7 +883,7 @@ A vendor's listing for a specific item. Soft-unique on `(item_id, vendor_id, ven
 | `moq` | Decimal | No | Minimum order quantity |
 | `order_multiple` | Decimal | No | |
 | `package` | String | No | Cut-tape, reel, etc. |
-| `availability_status` | Enum(IN_STOCK, OUT_OF_STOCK, BACKORDER, LEAD_TIME, DISCONTINUED, UNKNOWN) | Yes | |
+| `availability_status_code` | String | Yes | FK to `availability_status`; I/O/B/L/D/U |
 | `qty_available` | Decimal | No | |
 | `lead_time_days` | Integer | No | |
 | `last_checked` | Timestamp | No | |
@@ -632,14 +907,14 @@ Append-only point-in-time snapshots of a vendor offer's availability and represe
 | `id` | UUID | Yes | |
 | `offer_id` | UUID | Yes | FK to `vendor_offer` |
 | `captured_at` | Timestamp | Yes | |
-| `availability_status` | Enum(IN_STOCK, OUT_OF_STOCK, BACKORDER, LEAD_TIME, DISCONTINUED, UNKNOWN) | Yes | |
+| `availability_status_code` | String | Yes | FK to `availability_status`; I/O/B/L/D/U |
 | `qty_available` | Decimal | No | |
 | `lead_time_days` | Integer | No | |
 | `unit_price_1` | Money | No | Representative qty-1 price |
 
 ---
 
-## 14. Locations
+## 15. Locations
 
 ### `location` (CRR)
 Physical storage locations in a nested hierarchy. WASTE and LOST are event types and instance statuses — not location types.
@@ -657,7 +932,7 @@ Hierarchy traversed via recursive queries on `parent_id`. No closure table.
 
 ---
 
-## 15. BOM & Build
+## 16. BOM & Build
 
 ### `bom` (CRR)
 
@@ -677,7 +952,7 @@ Hierarchy traversed via recursive queries on `parent_id`. No closure table.
 | `id` | UUID | Yes | |
 | `bom_id` | UUID | Yes | FK to `bom` |
 | `rev_label` | String | Yes | e.g., A, 1, 1.0 |
-| `status` | Enum(DRAFT, RELEASED, OBSOLETE) | Yes | |
+| `status_code` | String | Yes | FK to `bom_status`; D/R/O |
 | `notes` | String | No | |
 | `released_at` | Timestamp | No | |
 | `created_at` | Timestamp | Yes | |
@@ -714,12 +989,12 @@ Hierarchy traversed via recursive queries on `parent_id`. No closure table.
 | `bom_revision_id` | UUID | Yes | FK to `bom_revision` |
 | `qty_built` | Decimal | Yes | |
 | `project_id` | UUID | Yes | FK to `project` |
-| `status` | Enum(PLANNED, IN_PROGRESS, COMPLETED, CANCELLED) | Yes | |
+| `status_code` | String | Yes | FK to `build_status`; P/I/C/X |
 | `created_at` | Timestamp | Yes | |
 
 ---
 
-## 16. Tags, Formulas, Templates & Extraction
+## 17. Tags, Formulas, Templates & Extraction
 
 ### `tag` (CRR) / `item_tag` (CRR)
 
@@ -745,7 +1020,7 @@ Maps expression symbols to source attributes.
 | `formula_id` | UUID | Yes | FK to `attribute_formula` |
 | `symbol` | String | Yes | e.g., $r for Resistance |
 | `attribute_id` | UUID | Yes | FK to `attribute_definition` |
-| `layer` | Enum(CATALOG, INSTANCE, EITHER) | Yes | |
+| `layer_code` | String | Yes | FK to `formula_layer`; C/I/E |
 
 ### `formula_category` (CRR)
 Applicable categories for a formula.
@@ -759,7 +1034,7 @@ Applicable categories for a formula.
 | `id` | UUID | Yes | |
 | `name` | String | Yes | |
 | `category_id` | UUID | No | FK to `category` |
-| `template_type` | Enum(MODEL, SUBCKT, SYMBOL, PARAMS) | Yes | |
+| `template_type_code` | String | Yes | FK to `ltspice_template_type`; M/S/Y/P |
 | `body` | String | Yes | Jinja2 |
 
 ### `ltspice_template_param` (CRR)
@@ -781,21 +1056,21 @@ Applicable categories for a formula.
 | `mapped_attribute_id` | UUID | No | FK to `attribute_definition` |
 | `value` | Decimal | No | Extracted numeric value in base units |
 | `confidence` | Integer | No | 0–100 |
-| `status` | Enum(PENDING, ACCEPTED, REJECTED) | Yes | |
+| `status_code` | String | Yes | FK to `extraction_status`; P/A/R |
 | `reviewed_by_user_id` | UUID | No | FK to `user` |
 
 ---
 
-## 17. Attachments, Settings & Users
+## 18. Attachments, Settings & Users
 
 ### `attachment` (CRR)
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `id` | UUID | Yes | |
-| `owner_type` | Enum(ITEM, INSTANCE, VENDOR, MANUFACTURER) | Yes | |
+| `owner_type_code` | String | Yes | FK to `attachment_owner_type`; I/N/V/M |
 | `owner_id` | UUID | Yes | FK to the owner entity |
-| `role` | Enum(PHOTO, DATASHEET, DOCUMENT, MODEL, OTHER) | Yes | |
+| `role_code` | String | Yes | FK to `attachment_role`; P/D/O/M/X |
 | `file_path` | String | Yes | Relative to user-data directory |
 | `mime_type` | String | No | |
 | `sha256` | String | No | |
@@ -842,14 +1117,14 @@ Defined now for future RBAC enforcement. Seeded and enforced in a later phase.
 | `at` | Timestamp | Yes | |
 | `entity_table` | String | Yes | |
 | `entity_id` | UUID | Yes | |
-| `action` | Enum(CREATE, UPDATE, DELETE) | Yes | |
+| `action_code` | String | Yes | FK to `audit_action`; C/U/D |
 | `change_summary` | JSON | No | |
 
 Off by default in single-user mode. Enabled when a second user is added — no migration required because attribution was recorded from day one.
 
 ---
 
-## 18. LOCAL Derived Entities (Read Model)
+## 19. LOCAL Derived Entities (Read Model)
 
 These entities are never synced. They are rebuilt in full after every sync merge and maintained incrementally by database triggers for local writes.
 
@@ -867,13 +1142,13 @@ Per-item stock aggregates derived from `inventory_event`.
 | `last_unit_cost` | Money | In home currency |
 
 ### `rm_stock_by_location` (LOCAL)
-Per-item, per-location, per-bucket stock.
+Per-item, per-location, per-stock-mode stock.
 
 | Attribute | Type | Notes |
 |-----------|------|-------|
 | `item_id` | UUID | PK part |
 | `location_id` | UUID | PK part |
-| `bucket` | Enum(BULK, INSTANCE) | PK part |
+| `stock_mode_code` | String | PK part; FK to `stock_mode`; B=bulk pool, I=tracked instances |
 | `qty` | Decimal | |
 
 ### `rm_instance_state` (LOCAL)
@@ -884,7 +1159,7 @@ Current state of each tracked instance.
 | `instance_id` | UUID | Primary key |
 | `current_location_id` | UUID | |
 | `qty_remaining` | Decimal | |
-| `status` | Enum(AVAILABLE, ASSIGNED, CONSUMED, WASTE, LOST) | |
+| `status_code` | String | FK to `instance_status`; A/S/C/W/L |
 
 ### `fts_item` (LOCAL)
 Full-text search index over item names, descriptions, SKUs, part numbers, markings, tags, and reference designators. Each dimensional attribute value is indexed in both its as-entered form and its canonical base-unit form. Maintained by triggers; rebuilt after sync merge.
@@ -894,7 +1169,7 @@ Cached thumbnail file paths and metadata for attachments.
 
 ---
 
-## 19. Key Indexes (Logical)
+## 20. Key Indexes (Logical)
 
 The following access patterns drive the critical indexes. Physical index definitions live in migration files.
 
@@ -911,10 +1186,11 @@ The following access patterns drive the critical indexes. Physical index definit
 | Offer lookup | `vendor_offer` by `item_id`; `price_break` by `offer_id` |
 | Soft-delete filtering | `deleted_at` on all tombstoned entities |
 | Full-text search | `fts_item` (FTS5 with trigram tokenizer) |
+| Code table lookup | Each `*_code` column by its value |
 
 ---
 
-## 20. Migrations
+## 21. Migrations
 
 ### `schema_migration` (LOCAL)
 
@@ -925,4 +1201,4 @@ The following access patterns drive the critical indexes. Physical index definit
 | `checksum` | String | SHA-256 of migration file |
 | `applied_at` | Timestamp | |
 
-Migrations are sequential, transactional, and idempotent. Each migration is wrapped in a transaction. Checksums detect post-application modification. Forward-only policy; destructive changes use data-migration hooks. The minimum compatible schema version is embedded in the application for sync compatibility enforcement.
+Migrations are sequential, transactional, and idempotent. Each migration is wrapped in a transaction. Checksums detect post-application modification. Forward-only policy; destructive changes use data-migration hooks. Code table seed data is inserted in migrations. The minimum compatible schema version is embedded in the application for sync compatibility enforcement.
