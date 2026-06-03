@@ -42,7 +42,7 @@ Type annotations, union syntax, docstring format (Google-style), one-class-per-f
 - **Human:** `docs/dev/standards-sql.md`
 - **Agent:** `docs/dev/agent/standards-sql.md`
 
-Column-explicit SELECT, named SQL constants, query formatting, table aliases, leading traceability comments, parameterization, INSERT column lists, batch forms, transaction discipline, and SQLite physical model constraints for CRR/LOG tables.
+Split into **Global** (all DBMS targets) and **SQLite-Specific** (current backend only — CRR/LOG rules are SQLite/cr-sqlite constructs, not portable). Global: column-explicit SELECT; fully explicit join syntax (`INNER JOIN`, `LEFT OUTER JOIN`, `RIGHT OUTER JOIN`, `FULL OUTER JOIN` — never abbreviated); `ON` clauses on their own lines; `AS` aliases on every table; CTEs permitted; named SQL constants prepared once and executed with parameters; traceability comments; formatting; parameterization; explicit INSERT column lists; batch forms; transaction discipline. SQLite-specific: CRR/LOG `DEFAULT` requirements, no cross-column `CHECK`, cr-sqlite alter protocol, `?` placeholder syntax.
 
 ### Data Models
 - **Human:** `docs/dev/standards-data-models.md`
