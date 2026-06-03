@@ -116,7 +116,7 @@ Developer onboarding document. Contains:
 ## Domains and Scope
 
 ### Python (`standards-python.md`)
-Everything currently in CLAUDE.md under "Python coding standards": type annotations, union syntax, docstring format (Google-style), one-class-per-file, `from __future__ import annotations`, frozen dataclasses/Pydantic models, no bare except.
+Everything currently in CLAUDE.md under "Python coding standards": type annotations, union syntax, docstring format (Google-style), one-class-per-file, frozen dataclasses/Pydantic models, no bare except. `from __future__ import annotations` is explicitly prohibited — Python 3.14 evaluates annotations lazily by default (PEP 649).
 
 ### SQL (`standards-sql.md`)
 The gap that triggered this work. Key rules to codify:

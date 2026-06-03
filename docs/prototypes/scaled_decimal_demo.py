@@ -13,7 +13,6 @@ or a REAL column) cannot represent most of these values exactly.
 Stdlib only: fractions, decimal, sqlite3. No third-party deps.
 """
 
-from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, getcontext
 from fractions import Fraction
