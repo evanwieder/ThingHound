@@ -51,4 +51,4 @@ cr-sqlite compatibility rules and empirical findings: `docs/dev/crsqlite-spike-f
 - Do not start coding unprompted. Wait for explicit instruction.
 - Do not push to remote without explicit user authorization.
 - Do not create PRs without explicit user authorization.
-- Table names are singular (e.g., `item`, `category`, `inventory_event`). No plural table names anywhere.
+- Table names are named for what a **single row** represents. Almost all table names are therefore singular (`item`, `category`, `inventory_event`). A table name is plural only when each row itself represents a collection — which is rare. When uncertain: if one row = one thing, the name is singular. Index name tokens follow the same rule.

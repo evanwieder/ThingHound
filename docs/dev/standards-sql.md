@@ -12,6 +12,22 @@ These rules apply to every SQL statement written for any DBMS target.
 
 ---
 
+## Table Naming
+
+Table names are named for what **a single row** represents.
+
+- A row in `item` represents one item → `item` (singular).
+- A row in `inventory_event` represents one event → `inventory_event` (singular).
+- A row in `item_category` represents one item-category membership → `item_category` (singular).
+
+Almost all table names are therefore singular. A table name is plural only when each row itself represents a **collection** of objects — for example, a table where each row stores an aggregated set or a bundle as its primary content. This is rare. When uncertain: if one row = one thing, the name is singular.
+
+Index name tokens follow the same rule: `idx_item_deleted_at`, never `idx_items_deleted_at`.
+
+This convention applies to all table identifiers in migrations, SQL constants, mappers, specs, and documentation. English prose and column names are exempt; only table identifiers are governed by this rule.
+
+---
+
 ## Where SQL Lives
 
 All SQL lives in **aggregate mappers**. No SQL string appears in service classes, domain objects, collections, query/specification objects, tests, or any other location. The mapper is the only place that knows both the physical schema and the domain model. Consumers see only domain models.
