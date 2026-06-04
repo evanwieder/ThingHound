@@ -281,7 +281,7 @@ After Gate B, dispatch in parallel (superpowers:dispatching-parallel-agents). No
 | **Vendors & Offers** | `VendorMapper` (`vendor`) · `VendorOfferMapper` *(compound: `vendor_offer` + `price_break`)* | offer per `(item,vendor)`; soft-unique `(item,vendor,vendor_sku)` service-enforced; breaks by `qty_min`; replacement cost = lowest active-offer tier in home currency | Vendors tab |
 | **Offer History & Costing** | `OfferHistoryMapper` (`offer_history`, LOG) | append snapshot; price/availability trend query object; FX roll-up via `fx_rate` (read) | offer history; roll-ups |
 | **Locations** | `LocationMapper` (`location`) | recursive-CTE hierarchy query; per-location balances (reads `inventory_event`); scope selector | locations workspace |
-| **Instances depth** | *(no new writer tables; reads U5 aggregates)* | measurement current-value = latest `(measured_at,hlc,id)`; assign/waste/lost | Instances tab, `instances.measure` |
+| **Instances depth** | `InstanceMeasurementMapper` (`instance_measurement`, LOG) | append-only write via `instances.measure`; current-value = latest by `(measured_at,hlc,id)` (query object); assign/waste/lost service actions | Instances tab, `instances.measure` |
 | **Projects** | `ProjectMapper` (`project`) | CRUD + status; consumption linkage | project picker |
 | **Tags & FTS** | `TagMapper` *(compound: `tag` + `item_tag`)*; **LOCAL** `fts_item` via triggers/query | trigram FTS over names/desc/SKU/MPN/markings/refdes/tags; each dimensional value indexed as-entered **and** canonical; unit-aware quick-search routing | §3.14 search |
 | **Attachments** | `AttachmentMapper` (`attachment`); **LOCAL** `rm_thumbnail` | polymorphic owner; path-traversal rejected at service; lazy Pillow thumbnails | Assets, thumbnail column |
