@@ -1,54 +1,57 @@
-"""Tests for migration application behavior."""
+"""Tests for migration application behaviour."""
 
 from pathlib import Path
 
 import pytest
 
-from thinghound.db.connection import create_connection
-from thinghound.db.migrations import apply_migrations
+from thinghound.db.connection import connect
+from thinghound.db.migrations import apply_all, applied_versions
 
 
-def test_apply_migrations_applies_once(tmp_path: Path) -> None:
-    """Applying migrations twice should be idempotent."""
-    migrations_dir = tmp_path / "migrations"
-    migrations_dir.mkdir()
-    (migrations_dir / "0001_init.sql").write_text(
-        "CREATE TABLE IF NOT EXISTS demo(id INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '');",
-        encoding="utf-8",
-    )
+def _write_migration(directory: Path, name: str, sql: str) -> None:
+    (directory / name).write_text(sql, encoding="utf-8")
 
-    connection = create_connection()
+
+def test_apply_all_is_idempotent(tmp_path: Path) -> None:
+    mdir = tmp_path / "migrations_sql"
+    mdir.mkdir()
+    _write_migration(mdir, "0001_init.sql",
+                     "CREATE TABLE IF NOT EXISTS demo(id INTEGER PRIMARY KEY);")
+    conn = connect()
     try:
-        apply_migrations(connection, migrations_dir)
-        apply_migrations(connection, migrations_dir)
-        row = connection.execute("SELECT COUNT(*) FROM th_migration;").fetchone()
-        assert row[0] == 1
+        apply_all(conn, mdir)
+        apply_all(conn, mdir)
+        assert applied_versions(conn) == ["0001"]
     finally:
-        connection.close()
+        conn.close()
 
 
-def test_apply_migrations_detects_checksum_mismatch(tmp_path: Path) -> None:
-    """Changing migration SQL after apply should raise checksum mismatch."""
-    migrations_dir = tmp_path / "migrations"
-    migrations_dir.mkdir()
-    migration_file = migrations_dir / "0001_init.sql"
-    migration_file.write_text(
-        "CREATE TABLE IF NOT EXISTS demo(id INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '');",
-        encoding="utf-8",
-    )
-
-    connection = create_connection()
+def test_apply_all_records_schema_migration_row(tmp_path: Path) -> None:
+    mdir = tmp_path / "migrations_sql"
+    mdir.mkdir()
+    _write_migration(mdir, "0001_init.sql",
+                     "CREATE TABLE IF NOT EXISTS demo(id INTEGER PRIMARY KEY);")
+    conn = connect()
     try:
-        apply_migrations(connection, migrations_dir)
-        migration_file.write_text(
-            (
-                "CREATE TABLE IF NOT EXISTS demo(" 
-                "id INTEGER PRIMARY KEY, value TEXT NOT NULL DEFAULT ''" 
-                ");"
-            ),
-            encoding="utf-8",
-        )
+        apply_all(conn, mdir)
+        row = conn.execute("SELECT version, name FROM schema_migration;").fetchone()
+        assert row["version"] == "0001"
+        assert row["name"] == "0001_init"
+    finally:
+        conn.close()
+
+
+def test_apply_all_raises_on_checksum_mismatch(tmp_path: Path) -> None:
+    mdir = tmp_path / "migrations_sql"
+    mdir.mkdir()
+    f = mdir / "0001_init.sql"
+    f.write_text("CREATE TABLE IF NOT EXISTS demo(id INTEGER PRIMARY KEY);", encoding="utf-8")
+    conn = connect()
+    try:
+        apply_all(conn, mdir)
+        f.write_text("CREATE TABLE IF NOT EXISTS demo(id INTEGER PRIMARY KEY, x TEXT);",
+                     encoding="utf-8")
         with pytest.raises(RuntimeError, match="Checksum mismatch"):
-            apply_migrations(connection, migrations_dir)
+            apply_all(conn, mdir)
     finally:
-        connection.close()
+        conn.close()

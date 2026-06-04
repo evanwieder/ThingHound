@@ -1,21 +1,13 @@
-"""SQLite connection factory configured for ThingHound constraints."""
+"""SQLite connection configured for ThingHound (FK off, WAL, cr-sqlite guarded)."""
 
 import sqlite3
 from pathlib import Path
 
 
-def create_connection(db_path: str | Path = ":memory:") -> sqlite3.Connection:
-    """Create a sqlite3 connection with ThingHound-required pragmas.
-
-    Args:
-        db_path: Database file path or `":memory:"`.
-
-    Returns:
-        Configured sqlite3 connection.
-    """
-    connection = sqlite3.connect(str(db_path))
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = OFF;")
+def connect(db_path: str | Path = ":memory:") -> sqlite3.Connection:
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = OFF;")
     if str(db_path) != ":memory:":
-        connection.execute("PRAGMA journal_mode = WAL;")
-    return connection
+        conn.execute("PRAGMA journal_mode = WAL;")
+    return conn

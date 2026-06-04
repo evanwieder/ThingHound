@@ -1,17 +1,17 @@
-"""Domain and infrastructure error types for ThingHound foundation."""
+"""Typed domain errors shared across the ThingHound foundation."""
 
 
 class ThingHoundError(Exception):
-    """Base class for ThingHound-specific exceptions."""
+    """Base for all ThingHound-specific exceptions."""
 
 
 class ScaleOverflowError(ThingHoundError):
-    """Raised when scaled integer magnitude overflows supported bounds."""
+    """Scaled integer magnitude exceeds signed int64 bounds."""
 
 
 class TemporalParseError(ThingHoundError):
-    """Raised when an ISO-8601 timestamp cannot be parsed."""
+    """ISO-8601 timestamp is malformed or missing a UTC offset."""
 
 
 class UnknownUnitError(ThingHoundError):
-    """Raised when a unit symbol cannot be normalized."""
+    """Unit symbol is not present in the caller-supplied factors map."""

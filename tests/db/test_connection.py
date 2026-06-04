@@ -2,24 +2,20 @@
 
 from pathlib import Path
 
-from thinghound.db.connection import create_connection
+from thinghound.db.connection import connect
 
 
-def test_create_connection_disables_foreign_keys_for_memory_db() -> None:
-    """Memory connection should always set foreign_keys pragma to OFF."""
-    connection = create_connection()
+def test_connect_disables_foreign_keys() -> None:
+    conn = connect()
     try:
-        row = connection.execute("PRAGMA foreign_keys;").fetchone()
-        assert row[0] == 0
+        assert conn.execute("PRAGMA foreign_keys;").fetchone()[0] == 0
     finally:
-        connection.close()
+        conn.close()
 
 
-def test_create_connection_enables_wal_for_file_db(tmp_path: Path) -> None:
-    """File-based connection should switch to WAL journal mode."""
-    connection = create_connection(tmp_path / "thinghound.db")
+def test_connect_enables_wal_for_file_db(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "thinghound.db")
     try:
-        row = connection.execute("PRAGMA journal_mode;").fetchone()
-        assert str(row[0]).lower() == "wal"
+        assert conn.execute("PRAGMA journal_mode;").fetchone()[0].lower() == "wal"
     finally:
-        connection.close()
+        conn.close()
