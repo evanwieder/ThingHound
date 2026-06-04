@@ -9,11 +9,10 @@ function setupHorizontalSashes(workspace, leftPane, rightPane) {
 
   leftSash?.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = leftPane.getBoundingClientRect().width;
+    const workspaceRect = workspace.getBoundingClientRect();
 
     const onMove = (moveEvent) => {
-      const width = Math.max(MIN_LEFT, startWidth + (moveEvent.clientX - startX));
+      const width = Math.max(MIN_LEFT, moveEvent.clientX - workspaceRect.left);
       workspace.style.setProperty("--left-width", `${width}px`);
     };
 
@@ -28,11 +27,10 @@ function setupHorizontalSashes(workspace, leftPane, rightPane) {
 
   rightSash?.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = rightPane.getBoundingClientRect().width;
+    const workspaceRect = workspace.getBoundingClientRect();
 
     const onMove = (moveEvent) => {
-      const width = Math.max(MIN_RIGHT, startWidth - (moveEvent.clientX - startX));
+      const width = Math.max(MIN_RIGHT, workspaceRect.right - moveEvent.clientX);
       workspace.style.setProperty("--right-width", `${width}px`);
     };
 
@@ -81,7 +79,16 @@ function createRestoreBar({ parent, id, label, className, onRestore }) {
   return bar;
 }
 
+function notifyLayoutChanged() {
+  requestAnimationFrame(() => {
+    window.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new Event("layout:changed"));
+  });
+}
+
 function setupPaneMinimize(workspace, leftPane, rightPane, centerPane) {
+  const leftSash = workspace.querySelector('[data-sash="left"]');
+  const rightSash = workspace.querySelector('[data-sash="right"]');
   const leftRestore = createRestoreBar({
     parent: workspace,
     id: "restore-left",
@@ -89,10 +96,11 @@ function setupPaneMinimize(workspace, leftPane, rightPane, centerPane) {
     className: "restore-left is-collapsed",
     onRestore: () => {
       leftPane.classList.remove("is-collapsed");
-      workspace.querySelector('[data-sash="left"]')?.classList.remove("is-collapsed");
+      leftSash?.classList.remove("is-collapsed");
       leftRestore.classList.add("is-collapsed");
       workspace.style.setProperty("--left-width", `${Math.max(MIN_LEFT, 260)}px`);
       syncCenterBounds(workspace);
+      notifyLayoutChanged();
     },
   });
 
@@ -103,10 +111,11 @@ function setupPaneMinimize(workspace, leftPane, rightPane, centerPane) {
     className: "restore-right is-collapsed",
     onRestore: () => {
       rightPane.classList.remove("is-collapsed");
-      workspace.querySelector('[data-sash="right"]')?.classList.remove("is-collapsed");
+      rightSash?.classList.remove("is-collapsed");
       rightRestore.classList.add("is-collapsed");
       workspace.style.setProperty("--right-width", `${Math.max(MIN_RIGHT, 320)}px`);
       syncCenterBounds(workspace);
+      notifyLayoutChanged();
     },
   });
 
@@ -122,23 +131,26 @@ function setupPaneMinimize(workspace, leftPane, rightPane, centerPane) {
       filterSash?.classList.remove("is-collapsed");
       filterRestore.classList.add("is-collapsed");
       centerPane.style.setProperty("--filter-height", `${Math.max(MIN_FILTER, 160)}px`);
+      notifyLayoutChanged();
     },
   });
 
   leftPane.addEventListener("dblclick", () => {
     leftPane.classList.add("is-collapsed");
-    workspace.querySelector('[data-sash="left"]')?.classList.add("is-collapsed");
+    leftSash?.classList.add("is-collapsed");
     leftRestore.classList.remove("is-collapsed");
-    workspace.style.setProperty("--left-width", `${MIN_LEFT}px`);
+    workspace.style.setProperty("--left-width", "0px");
     syncCenterBounds(workspace);
+    notifyLayoutChanged();
   });
 
   rightPane.addEventListener("dblclick", () => {
     rightPane.classList.add("is-collapsed");
-    workspace.querySelector('[data-sash="right"]')?.classList.add("is-collapsed");
+    rightSash?.classList.add("is-collapsed");
     rightRestore.classList.remove("is-collapsed");
-    workspace.style.setProperty("--right-width", `${MIN_RIGHT}px`);
+    workspace.style.setProperty("--right-width", "0px");
     syncCenterBounds(workspace);
+    notifyLayoutChanged();
   });
 
   filterRegion.addEventListener("dblclick", () => {
@@ -146,17 +158,20 @@ function setupPaneMinimize(workspace, leftPane, rightPane, centerPane) {
     filterSash?.classList.add("is-collapsed");
     filterRestore.classList.remove("is-collapsed");
     centerPane.style.setProperty("--filter-height", `${MIN_FILTER}px`);
+    notifyLayoutChanged();
   });
 }
 
 function syncCenterBounds(workspace) {
   const totalWidth = workspace.getBoundingClientRect().width;
-  const leftWidth = parseFloat(getComputedStyle(workspace).getPropertyValue("--left-width")) || MIN_LEFT;
-  const rightWidth = parseFloat(getComputedStyle(workspace).getPropertyValue("--right-width")) || MIN_RIGHT;
+  const leftValue = parseFloat(getComputedStyle(workspace).getPropertyValue("--left-width"));
+  const rightValue = parseFloat(getComputedStyle(workspace).getPropertyValue("--right-width"));
+  const leftWidth = Number.isNaN(leftValue) ? MIN_LEFT : leftValue;
+  const rightWidth = Number.isNaN(rightValue) ? MIN_RIGHT : rightValue;
   const available = totalWidth - leftWidth - rightWidth - 12;
   if (available < MIN_CENTER) {
     const deficit = MIN_CENTER - available;
-    const reducedRight = Math.max(MIN_RIGHT, rightWidth - deficit);
+    const reducedRight = Math.max(0, rightWidth - deficit);
     workspace.style.setProperty("--right-width", `${reducedRight}px`);
   }
 }

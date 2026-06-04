@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "build": "esbuild ui/src/main.js --bundle --outfile=ui/dist/main.js --sourcemap",
+    "build": "esbuild ui/src/main.js --bundle --outfile=ui/dist/main.js --sourcemap && cp ui/index.html ui/dist/index.html",
     "dev": "esbuild ui/src/main.js --bundle --outfile=ui/dist/main.js --sourcemap --watch"
   },
   "dependencies": {

@@ -1,12 +1,13 @@
+import { createBridgeApi } from "./bridge-api.js";
 import { initFilterStrip } from "./filterstrip.js";
 import { initGrid } from "./grid.js";
 import { initInspector } from "./inspector.js";
 import { initializeLayout } from "./layout.js";
 import { initTree } from "./tree.js";
 
-const bridgeApi = window.pywebview?.api;
+const bridgeApi = createBridgeApi(window.pywebview?.api);
 
-if (bridgeApi == null) {
+if (!bridgeApi.hasPywebviewBridge) {
   console.warn("PyWebView API not available; running in standalone layout mode.");
 }
 

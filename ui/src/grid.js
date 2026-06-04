@@ -54,12 +54,22 @@ export async function initGrid(target, bridgeApi) {
     rowClick: (_event, row) => emitSelection(row.getData())
   });
 
-  window.addEventListener("grid:filter", async (event) => {
+  const reloadRows = async (filters = {}) => {
     if (bridgeApi == null) {
+      table.redraw(true);
       return;
     }
-    const response = await bridgeApi.grid_query_items(event.detail ?? {});
-    table.replaceData(response.rows ?? []);
+    const response = await bridgeApi.grid_query_items(filters);
+    await table.replaceData(response.rows ?? []);
+    table.redraw(true);
+  };
+
+  window.addEventListener("grid:filter", async (event) => {
+    await reloadRows(event.detail ?? {});
+  });
+
+  window.addEventListener("layout:changed", async () => {
+    await reloadRows({});
   });
 
   table.on("tableBuilt", () => {

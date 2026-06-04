@@ -4,11 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ThingHound</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator_midnight.min.css"
+    />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div id="app" class="layout-root">
-      <header class="toolbar">ThingHound</header>
+      <header class="toolbar">
+        <div class="toolbar-brand">ThingHound</div>
+        <div class="toolbar-actions">
+          <button type="button" class="toolbar-btn" id="toolbar-add-item">Add Item</button>
+          <button type="button" class="toolbar-btn" id="toolbar-refresh">Refresh</button>
+        </div>
+      </header>
       <main class="workspace" id="workspace">
         <aside class="pane pane-left" id="pane-left">Category Tree</aside>
         <div class="sash sash-left" data-sash="left"></div>
