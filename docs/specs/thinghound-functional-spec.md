@@ -76,7 +76,7 @@ Windows, macOS, Linux. Single install; no external server required for core use.
 | **Kitting** | Assembling the required parts for a build, consuming from stock atomically. |
 | **Lifecycle Status** | Catalog status: `ACTIVE`, `NRND` (not recommended for new designs), `OBSOLETE`, `UNKNOWN`. Drives warnings in BOMs and procurement. |
 | **LOCAL** | Device-only table, never synced. Derived and cached data. Rebuilt from CRR/LOG sources after a sync merge. |
-| **Location** | A node in the physical storage hierarchy. Types: `STORAGE` (nested physical locations), `WASTE` (terminal), `LOST` (terminal). Hierarchy traversed via recursive CTEs on `parent_id`. |
+| **Location** | A node in the physical storage hierarchy. Type: `STORAGE` (nested physical locations). Hierarchy traversed via recursive CTEs on `parent_id`. WASTE and LOST are inventory event types that remove stock entirely — they have no corresponding location. |
 | **LOG** | Append-only CRR. Immutable once written; new facts are new rows. |
 | **Markings** | Free-text description of the physical identification marks on a part (printed text, resistor color bands, maker's marks). FTS-searchable for reverse lookup. |
 | **Money** | Stored as integer minor units plus an ISO 4217 currency code. Never a float. |
@@ -265,7 +265,8 @@ Shared pipeline: **Ingest → Match → Reconcile → Commit**
 - A mapping targets either the catalog layer or an instance measurement aggregate (`source_layer`).
 - **Heterogeneous rendering.** Each row resolves each Display Column through its item's primary category Column Mapping, allowing a mixed grid (resistors, capacitors, mechanical parts) to align under shared columns.
 - **Sorting and filtering** on a Display Column operate on the resolved attribute's indexed `value_scaled` (or `value_text` for non-numeric). Across mixed categories a numeric sort compares raw base values that may be in different dimensions — the grid indicates mixed-dimension columns.
-- **Grid Configurations** are savable named layouts: selected visible columns, column order, widths, grouping levels, sort, and saved filters (predicate tree JSON). Scoped globally or to a specific category. One per scope may be marked default via a single-cell reference on the item or in `app_setting`.
+- **Grid Configurations** are savable named layouts: selected visible columns, column order, widths, grouping levels, sort, and saved filters (predicate tree JSON). Scoped globally or to a specific category. One per scope may be marked default via a single-cell reference on the category or in `app_setting` (for the global scope).
+- **Hero column**: one Display Column per configuration may be designated as the hero — pinned as the first data column and rendered bold. Intended for the attribute that best identifies an item within the active view (e.g., Resistance for a resistor category view).
 - **Instance Display Mode** is per-configuration: `AGGREGATED` (default — one row per item, combined on-hand, aggregate columns for instance measurements) or `EXPANDED` (individuated members as child tree rows under their parent item).
 - **Display Profile** (per category) holds only the name template. Grid layout and defaults live in Grid Configurations.
 
@@ -320,7 +321,19 @@ Shared pipeline: **Ingest → Match → Reconcile → Commit**
 
 ### 4.1 Main Layout
 
-Left category tree (search, drag-reparent) · centre dense grid (dynamic columns per active category or global view) · right context inspector · status bar (counts, selection summary, last sync time and status).
+The window is divided into three vertical panes plus a status bar. Data density is a first-class design value: compact row heights, small-but-legible type, and a high column count kept visible simultaneously without scrolling. Whitespace is used only where it aids scannability, not as decoration.
+
+**Left pane (narrow, fixed width):** A single hierarchical category tree with search and drag-reparent. Selecting a node filters the centre grid to that category and its descendants.
+
+**Centre pane (dominant):** Two zones stacked vertically:
+1. *Grid:* The primary work surface. Thumbnail image column (first, narrow) for items with a photo; then the user-configured Display Columns at compact row height. When the view is grouped by category, category-path section headers appear as collapsible rows within the grid itself — they are not a separate zone. Clicking a row populates the right inspector without navigating away. See §4.4.
+2. *Filter strip (bottom):* Persistent filter/search area below the grid. Contains the quick-search bar, parametric filter chips, and category/location scope controls. Always visible so filters are a one-click reach without entering a separate mode.
+
+**Global toolbar (top of window):** Application-level action bar with buttons for the primary create/edit/delete operations on the current context. Sits above all three panes.
+
+**Right pane (inspector, always visible):** Displays full detail for the selected item without navigating away from the grid. Tabbed; see §4.3. Resizable but never fully hidden — the inspector is a peer to the grid, not a pop-up.
+
+**Status bar (bottom of window):** Row count for the current view, selection summary (items/qty selected), last sync time and status.
 
 ### 4.2 Add-Item Wizard
 
@@ -328,15 +341,30 @@ Category → Manufacturer/Series → Attributes (compound `[magnitude][unit▼]`
 
 ### 4.3 Inspector Panel
 
-Tabs: **Catalog** (nominal attributes by attribute category, lifecycle, markings, tags; computed attributes show a calculator icon; incomplete-flag indicator for missing required attributes) · **Stock & Events** (ledger with per-location balances split by bulk pool vs instances; Adjust, Waste, Lost, Individuate actions; invoice links; costing summary) · **Instances** (lots/serials with remaining qty, measured-value history, location, assign/waste/lost; Individuate selected bulk units) · **Vendors** (per-vendor offers with SKU/URL, MOQ/multiple/package, price-break tiers, availability, price+availability history) · **Alternates** (ranked replacements and cross-refs; preferred replacement highlighted for OBSOLETE/NRND items) · **BOM/Where-used** · **Simulation** (LTspice template, preview, override, export).
+The inspector is divided into two persistent vertical zones:
+
+**Top zone — item summary (non-attribute data):** Always visible regardless of which tab is active below. Shows: item name (rendered from the name template), SKU, manufacturer and part number, primary category, lifecycle status, on-hand quantity, and the item's primary photo thumbnail if one is attached.
+
+**Bottom zone — tabbed detail:** A scrollable, tabbed panel for the full detail. Tabs:
+- **Attributes** — nominal attribute values grouped by attribute category, in the order defined for the primary category's attribute set. Computed attributes show a calculator icon. Tolerance attributes displayed alongside their parent value. Incomplete-item indicator if any required attribute is missing.
+- **Stock & Events** — event ledger with per-location balances split by bulk pool and instances; Adjust, Waste, Lost, and Individuate actions; invoice links; costing summary.
+- **Instances** — tracked lots/serials with remaining qty, measured-value history, location, assign/waste/lost actions; Individuate selected bulk units.
+- **Vendors** — per-vendor offers with SKU/URL, MOQ/order multiple/package, price-break tiers, availability status, and price+availability history.
+- **Alternates** — ranked replacements and cross-refs; preferred replacement highlighted for OBSOLETE/NRND items.
+- **BOM/Where-used** — BOM revisions and builds referencing this item.
+- **Simulation** — LTspice template selection, rendered preview, override text, export.
 
 ### 4.4 Grid Behaviour
 
-Powered by Tabulator. Single layout from global Display Columns; each row resolves columns through its item's primary-category Column Mapping. The hero column is pinned/bold. Dimensional columns display converted values; sort/filter operate on `value_scaled` or `value_text`. Native tree/grouping (instance expansion, group-by category or any column), virtualisation for large datasets, inline editing with typed editors (unit spinners with per-attribute prefix range, enum dropdowns). Multi-select bulk actions (move, tag, edit, delete) with undo/redo. Instance aggregation: by default one row per item; EXPANDED mode reveals individuated members as child rows.
+Powered by Tabulator. Columns: a narrow **thumbnail** column first (shows the item's primary photo if one is attached; blank otherwise), followed by the user-configured global Display Columns. Each row resolves Display Columns through its item's primary-category Column Mapping, so a mixed-category view aligns heterogeneous items under shared column headings. The hero column is pinned and bold. Dimensional columns display values in the configured display unit; sort and filter always operate on `value_scaled` or `value_text`. Native tree/grouping (instance expansion, group-by category or any column), virtualisation for large datasets (no pagination), inline editing with typed editors (unit spinners with per-attribute prefix range, enum dropdowns). Multi-select bulk actions (move, tag, edit, delete) with undo/redo. Instance aggregation: by default one row per item; EXPANDED mode reveals individuated members as child rows.
 
 ### 4.5 Search & Filters
 
-Global search bar (`/`). A parametric filter bar where the user adds filter chips — each `attribute · operator · value+unit` (e.g., `Resistance 1k–1.5k Ω`, `Power ≥ ¼ W`, `Length ≤ 6 mm`) — that AND together with optional OR groups. Chips may target any attribute, built-in field, or instance aggregate. Each bound is unit/fraction-converted to base units. A configuration switcher selects among saved Grid Configurations; the current layout can be saved or updated.
+The **filter strip** (bottom zone of the centre pane, §4.1) is the persistent search surface. It contains:
+- A **quick-search bar** (`/` to focus): unit-aware — a `magnitude+unit` token (e.g., `2.2k ohm`) routes to a `value_scaled` lookup; plain tokens hit FTS5 over names, descriptions, SKUs, part numbers, markings, refdes, and tags.
+- **Parametric filter chips**: each chip is `attribute · operator · value+unit` (e.g., `Resistance 1k–1.5k Ω`, `Power ≥ ¼ W`, `Length ≤ 6 mm`). Chips AND together; optional OR groups. Chips may target any attribute, composite component, built-in field, or instance measurement aggregate — not only visible columns. Each numeric bound is unit/fraction-converted to base units.
+- A **scope selector**: narrows the view to a category subtree or storage location without navigating the left-pane trees.
+- A **configuration switcher**: selects among saved Grid Configurations; the current layout can be saved or updated from here.
 
 ### 4.6 BOM & Build Workspace
 
