@@ -1,6 +1,6 @@
 # ThingHound — Data Model Specification
 
-**Date:** 2026-06-03
+**Date:** 2026-06-04
 **Companion documents:** `thinghound-functional-spec.md`, `thinghound-architecture.md`
 
 This document is the **logical data model** — it describes domain entities, their attributes, relationships, and constraints in database-agnostic terms. Physical representation (column types, encoding, DDL constraints) is a mapper concern documented in `thinghound-architecture.md` §9. No DBMS-specific types or syntax appear here.
@@ -11,7 +11,15 @@ This document is the **logical data model** — it describes domain entities, th
 
 ### Identifiers
 
-All primary keys are **UUID** (UUIDv7 — time-ordered, collision-free across devices without coordination). In Python domain models, typed as `UUIDv7` from `thinghound.types`. Physical encoding is DBMS-specific; see the Type Mapping appendix in `thinghound-architecture.md`.
+Primary key strategy depends on table role:
+
+- **Structure and master-data tables** (registry-loaded config, stable named entities): integer `id` (DB-generated). Column is named **`id`**. Normal rowid table in SQLite.
+- **Operational and transactional tables** (high-volume, user-created, event records): **UUIDv7** `uuid` (time-ordered, collision-free without coordination). Column is named **`uuid`**. `WITHOUT ROWID` in SQLite. In Python domain models, typed as `UUIDv7` from `thinghound.types`.
+- **Reference / code tables**: natural primary key (`code TEXT`).
+
+**FK column naming follows the referenced PK type:** a FK to an integer-PK table ends in `_id` (e.g., `category_id`, `vendor_id`); a FK to a uuid-PK table ends in `_uuid` (e.g., `item_uuid`, `instance_uuid`). The name signals the type.
+
+Physical encoding is DBMS-specific; see the Type Mapping appendix in `thinghound-architecture.md`.
 
 ### Exact Numeric Values
 
@@ -27,20 +35,11 @@ Money is a `Money` value: an exact decimal amount paired with an ISO 4217 curren
 
 The logical `Timestamp` and `Date` types are points in time / calendar dates, represented as ISO-8601 in the domain model and across the bridge. Their **physical** storage is DBMS-specific and a mapper concern: on SQLite they are stored as **epoch integers** (epoch milliseconds, UTC — see `thinghound-architecture.md` §9), never as text; the mapper encodes/decodes at the storage boundary. The `HLC` (Hybrid Logical Clock) type is a causal timestamp carried on events and measurements to ensure deterministic ordering across devices with clock skew; it is stored as text, not an epoch integer. Replay and costing order: `(effective_date, hlc, id)`.
 
-### Sync Classes
-
-Every entity is annotated with its sync class — a behavioral, not physical, property:
-
-- **CRR** — Conflict-free Replicated Relation. Synced across devices via cr-sqlite. Column-level last-writer-wins merge by causal metadata.
-- **LOG** — Append-only CRR. Insert-only; never updated or deleted after creation. Merges trivially.
-- **LOCAL** — Device-only. Never synced. Rebuilt from CRR/LOG sources after every sync merge.
-- **REF** — Reference data. Application-defined values seeded by migrations. Read-only at runtime. Identical on every device; does not sync.
-
 ### Code Table Pattern — No Native Enum Types
 
 Neither SQLite nor all target DBMSs support native enum types consistently. All domain-constrained string values use the **code table pattern** for portability and extensibility:
 
-- A reference entity named for what one row represents (e.g., `value_type`, `event_type`). Sync class: **REF**.
+- A reference entity named for what one row represents (e.g., `value_type`, `event_type`). Seeded by migrations; read-only at runtime.
 - `code TEXT` — primary key, single character, application-defined.
 - `name TEXT` — the full display name of the code value.
 - `description TEXT` — explanation of the code's meaning and usage.
@@ -49,15 +48,15 @@ In referencing entities, the column is renamed to `<field>_code` (e.g., `value_t
 
 ### Attribution
 
-Every **CRR** entity carries `created_by_user_id: UUID (optional)` and `updated_by_user_id: UUID (optional)`. Every **LOG** entity carries `user_id: UUID (optional)`. Attribution columns are omitted from individual entity listings below for brevity but are present on all CRR and LOG entities.
+Every entity carries `created_user_uuid: UUID (optional)` and `updated_user_uuid: UUID (optional)`. Append-only event entities additionally carry `user_uuid: UUID (optional)` in place of updated attribution. Attribution columns are omitted from individual entity listings below for brevity but are present on all entities.
 
 ### Soft Delete
 
-Most catalog and configuration entities use a `deleted_at: Timestamp (optional)` tombstone. `NULL` = active; a timestamp = soft-deleted. Events are never deleted (append-only).
+Most catalog and configuration entities use a `deleted_ts: Timestamp (optional)` tombstone. `NULL` = active; a timestamp = soft-deleted. Append-only event entities are never deleted.
 
 ### Natural-Key Uniqueness
 
-Uniqueness on natural keys (SKU, MPN, manufacturer name, attribute name within category) is a business constraint enforced by the service layer. Under sync, collisions are detected by the post-merge integrity check and quarantined for user resolution.
+Uniqueness on natural keys (SKU, MPN, manufacturer name, attribute name within category) is a business constraint enforced by the service layer.
 
 ---
 
@@ -80,7 +79,7 @@ Uniqueness on natural keys (SKU, MPN, manufacturer name, attribute name within c
 
 ---
 
-## 3. Reference Data / Code Tables (REF)
+## 3. Reference Data / Code Tables
 
 Each table has `code TEXT PRIMARY KEY`, `name TEXT`, `description TEXT`. Seeded by migrations; read-only at runtime.
 
@@ -310,18 +309,8 @@ Review status of a datasheet extraction candidate.
 | A | Accepted | Approved and written to the catalog |
 | R | Rejected | Discarded |
 
-### `attachment_owner_type`
-The type of entity an attachment belongs to.
-
-| code | name | description |
-|------|------|-------------|
-| I | Item | Catalog item |
-| N | Instance | Tracked instance or lot |
-| V | Vendor | Vendor record |
-| M | Manufacturer | Manufacturer record |
-
-### `attachment_role`
-The role or purpose of an attachment.
+### `file_type`
+The type of an attachment.
 
 | code | name | description |
 |------|------|-------------|
@@ -331,68 +320,59 @@ The role or purpose of an attachment.
 | M | Model | Simulation model file |
 | X | Other | Uncategorized attachment |
 
-### `audit_action`
-The type of change recorded in an audit log entry.
-
-| code | name | description |
-|------|------|-------------|
-| C | Create | A new record was created |
-| U | Update | An existing record was modified |
-| D | Delete | A record was soft-deleted |
-
 ---
 
 ## 4. Configuration & Schema
 
-### `attribute_category` (CRR)
+### `attribute_domain`
 A user-defined grouping of attribute definitions (Electrical, Physical, Mechanical, Thermal, etc.).
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | Primary key |
+| `id` | Integer | Yes | Primary key |
 | `name` | String | Yes | Soft-unique |
 | `sort_order` | Integer | Yes | UI ordering |
-| `deleted_at` | Timestamp | No | Tombstone |
+| `deleted_ts` | Timestamp | No | Tombstone |
 
-### `unit_dimension` (CRR)
+### `unit_dimension`
 A measurable domain with a defined base unit.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | e.g., Resistance, Mass |
 | `base_unit` | String | Yes | e.g., ohm, gram, metre |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
-### `prefix_set` (CRR)
+### `prefix_set`
 A named collection of unit prefixes (SI, Binary/IEC, user-defined).
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | e.g., SI, Binary/IEC |
 | `description` | String | No | |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
-### `prefix` (CRR)
+### `prefix`
 A single prefix within a prefix set.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `prefix_set_id` | UUID | Yes | FK to `prefix_set` |
+| `id` | Integer | Yes | |
+| `prefix_set_id` | Integer | Yes | FK to `prefix_set` |
 | `symbol` | String | Yes | e.g., k, M, m, µ, Ki |
 | `name` | String | Yes | e.g., kilo, mega, milli |
 | `factor` | Decimal | Yes | Exact multiplier relative to base unit |
 | `sort_order` | Integer | Yes | |
 
-### `unit_multiplier` (CRR)
+### `unit_multiplier`
 A specific named unit within a dimension (including the base unit itself).
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `dimension_id` | UUID | Yes | FK to `unit_dimension` |
+| `id` | Integer | Yes | |
+| `unit_dimension_id` | Integer | Yes | FK to `unit_dimension` |
 | `name` | String | Yes | Primary name: e.g., Ohm, Foot |
 | `alt_names` | JSON | No | Array of alternate names |
 | `symbol` | String | Yes | e.g., Ω, ft |
@@ -400,59 +380,59 @@ A specific named unit within a dimension (including the base unit itself).
 | `alt_plurals` | JSON | No | Array of alternate plurals |
 | `factor` | Decimal | Yes | Exact factor: how many base units per 1 of this unit |
 | `is_si_generated` | Boolean | Yes | True = auto-generated from a prefix set |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
-### `attribute_definition` (CRR)
-A named, typed, measurable property within one attribute category. Two attributes with the same name in different attribute categories are entirely distinct entities.
+### `attribute_definition`
+A named, typed, measurable property within one attribute domain. Two attributes with the same name in different attribute domains are entirely distinct entities.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `attribute_category_id` | UUID | Yes | FK to `attribute_category` |
-| `name` | String | Yes | Soft-unique within its attribute category |
+| `id` | Integer | Yes | |
+| `attribute_domain_id` | Integer | Yes | FK to `attribute_domain` |
+| `name` | String | Yes | Soft-unique within its attribute domain |
 | `value_type_code` | String | Yes | FK to `value_type`; N/I/S/E/B/U/F/C |
 | `description` | String | No | |
-| `unit_dimension_id` | UUID | No | FK to `unit_dimension`; set for Numeric and Integer types |
+| `unit_dimension_id` | Integer | No | FK to `unit_dimension`; set for Numeric and Integer types |
 | `scale` | Integer | Yes | Decimal places for value precision and comparison |
-| `display_unit_id` | UUID | No | FK to `unit_multiplier`; preferred entry/display unit |
+| `unit_multiplier_id` | Integer | No | FK to `unit_multiplier`; preferred entry/display unit |
 | `constraints` | JSON | No | Free-form: min, max, regex |
 | `display_template` | String | No | Jinja2; for Composite type |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
-### `attribute_allowed_prefix` (CRR)
+### `attribute_allowed_prefix`
 Which prefixes are selectable for entry on a specific numeric attribute.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `attribute_definition_id` | UUID | Yes | FK to `attribute_definition` |
-| `prefix_id` | UUID | Yes | FK to `prefix` |
+| `id` | Integer | Yes | |
+| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
+| `prefix_id` | Integer | Yes | FK to `prefix` |
 
-### `attribute_enum_value` (CRR)
+### `attribute_enum_value`
 Ordered members of an Enum-type attribute.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `attribute_id` | UUID | Yes | FK to `attribute_definition` |
+| `id` | Integer | Yes | |
+| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
 | `value` | String | Yes | Internal key |
 | `label` | String | No | Display label |
 | `sort_order` | Integer | Yes | |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
-### `attribute_component` (CRR)
+### `attribute_component`
 A named component within a Composite attribute.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `attribute_id` | UUID | Yes | FK to composite `attribute_definition` |
+| `id` | Integer | Yes | |
+| `attribute_definition_id` | Integer | Yes | FK to composite `attribute_definition` |
 | `key` | String | Yes | e.g., length, diameter, width |
 | `label` | String | No | |
 | `value_type_code` | String | Yes | FK to `value_type`; N/I/S/E/B/U only |
-| `unit_dimension_id` | UUID | No | |
+| `unit_dimension_id` | Integer | No | |
 | `scale` | Integer | Yes | |
-| `display_unit_id` | UUID | No | |
+| `unit_multiplier_id` | Integer | No | FK to `unit_multiplier` |
 | `sort_order` | Integer | Yes | |
 | `is_required` | Boolean | Yes | |
 
@@ -460,25 +440,28 @@ A named component within a Composite attribute.
 
 ## 5. Category
 
-### `category` (CRR)
-A node in the single-parent category tree. Ancestry queries use recursive CTEs on the indexed `parent_id` relationship.
+All categories live in a **single unified forest** with one unnamed root. The root's direct children are the named type-roots (merchandising, location-taxonomy, financial, …). A category's "type" is its first-level ancestor — derivable from `id_path` — not a stored field. `id_path` is the slash-joined chain of integer `id` values from the root down to and including the category itself. `full_path` is the same chain using category names. Both are **rebuilt for all descendants** whenever a category is moved to a different parent. Ancestry queries use recursive CTEs on the indexed `parent_id`.
+
+### `category`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | |
-| `parent_id` | UUID | No | FK to `category`; NULL = root |
-| `default_grid_config_id` | UUID | No | FK to `grid_configuration`; this category's default layout |
-| `deleted_at` | Timestamp | No | |
+| `parent_id` | Integer | No | FK to `category`; NULL = unnamed root |
+| `id_path` | String | Yes | Slash-joined integer ids from root to this node e.g. `1/4/12` |
+| `full_path` | String | Yes | Slash-joined names from root to this node e.g. `Merchandising/Passive/Resistor` |
+| `default_grid_config_id` | Integer | No | FK to `grid_configuration`; this category's default layout |
+| `deleted_ts` | Timestamp | No | |
 
-### `category_attribute` (CRR)
+### `category_attribute`
 Assigns an attribute definition to a category with per-assignment settings.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `category_id` | UUID | Yes | FK to `category` |
-| `attribute_id` | UUID | Yes | FK to `attribute_definition` |
+| `id` | Integer | Yes | |
+| `category_id` | Integer | Yes | FK to `category` |
+| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
 | `is_required` | Boolean | Yes | Whether this attribute is required for completeness |
 | `sort_order` | Integer | Yes | |
 | `default_value` | JSON | No | Default for the entry form |
@@ -490,113 +473,113 @@ No `is_inherited` attribute. Inheritance is computed at runtime from the categor
 
 ## 6. Display & Grid
 
-### `display_column` (CRR)
+### `display_column`
 A global, user-defined named grid column slot shared across all categories.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | |
 | `position` | Integer | Yes | Global order |
 | `default_width` | Integer | No | |
 | `value_kind_hint_code` | String | No | FK to `value_kind_hint`; N/T/A |
 | `is_hero` | Boolean | Yes | Pinned/prominent column |
 | `item_field_key` | String | No | When set: binds to a universal item field (sku, name, on_hand, markings, etc.) |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
-### `category_column_mapping` (CRR)
+### `category_column_mapping`
 Binds a Display Column to a mapping target for a specific category. Soft-unique on `(category_id, display_column_id)`.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `category_id` | UUID | Yes | FK to `category` |
-| `display_column_id` | UUID | Yes | FK to `display_column` |
-| `attribute_id` | UUID | No | Direct attribute binding |
-| `component_id` | UUID | No | Specific composite component |
+| `id` | Integer | Yes | |
+| `category_id` | Integer | Yes | FK to `category` |
+| `display_column_id` | Integer | Yes | FK to `display_column` |
+| `attribute_definition_id` | Integer | No | FK to `attribute_definition`; direct attribute binding |
+| `attribute_component_id` | Integer | No | FK to `attribute_component`; specific composite component |
 | `source_layer_code` | String | Yes | FK to `source_layer`; C/I |
 | `aggregate_code` | String | No | FK to `aggregate_function`; N/X/A/C/R; set when source layer = I |
 | `display_formula` | String | No | Expression; when set, overrides direct binding |
 
-### `display_profile` (CRR)
+### `display_profile`
 Per-category name template.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `category_id` | UUID | Yes | FK to `category`; soft-unique |
+| `id` | Integer | Yes | |
+| `category_id` | Integer | Yes | FK to `category`; soft-unique |
 | `name_template` | String | Yes | Jinja2 expression |
 
-### `grid_configuration` (CRR)
+### `grid_configuration`
 A named, savable grid layout.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | |
 | `scope_code` | String | Yes | FK to `grid_scope`; G/C |
-| `category_id` | UUID | No | FK to `category`; set when scope = C |
+| `category_id` | Integer | No | FK to `category`; set when scope = C |
 | `instance_display_code` | String | Yes | FK to `instance_display`; A/E |
 | `filter` | JSON | No | Saved predicate tree |
-| `created_at` | Timestamp | Yes | |
-| `deleted_at` | Timestamp | No | |
+| `created_ts` | Timestamp | Yes | |
+| `deleted_ts` | Timestamp | No | |
 
-### `grid_configuration_column` (CRR)
+### `grid_configuration_column`
 Visible columns and display settings for a Grid Configuration.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `configuration_id` | UUID | Yes | PK part; FK to `grid_configuration` |
-| `display_column_id` | UUID | Yes | PK part; FK to `display_column` |
+| `configuration_id` | Integer | Yes | PK part; FK to `grid_configuration` |
+| `display_column_id` | Integer | Yes | PK part; FK to `display_column` |
 | `position` | Integer | Yes | |
 | `width` | Integer | No | |
 | `is_pinned` | Boolean | Yes | |
 | `sort_priority` | Integer | No | |
 | `sort_direction_code` | String | No | FK to `sort_direction`; A/D |
 
-### `grid_configuration_grouping` (CRR)
+### `grid_configuration_grouping`
 Ordered group-by levels for a Grid Configuration.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `configuration_id` | UUID | Yes | PK part |
-| `display_column_id` | UUID | Yes | PK part |
+| `configuration_id` | Integer | Yes | PK part; FK to `grid_configuration` |
+| `display_column_id` | Integer | Yes | PK part; FK to `display_column` |
 | `position` | Integer | Yes | |
 
 ---
 
 ## 7. Identity & Series
 
-### `manufacturer` (CRR)
+### `manufacturer`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | Soft-unique |
 | `alt_names` | JSON | No | Array of alternate names |
 | `url` | String | No | |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
-### `product_series` (CRR)
+### `product_series`
 A manufacturer product line with shared default attribute values.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `manufacturer_id` | UUID | Yes | FK to `manufacturer` |
+| `id` | Integer | Yes | |
+| `manufacturer_id` | Integer | Yes | FK to `manufacturer` |
 | `name` | String | Yes | |
 | `description` | String | No | |
-| `category_id` | UUID | No | FK to `category` |
+| `category_id` | Integer | No | FK to `category` |
 | `default_footprint` | String | No | |
 
-### `series_attribute_default` (CRR)
+### `series_attribute_default`
 Default attribute values for a product series, auto-populated to new items.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `series_id` | UUID | Yes | FK to `product_series` |
-| `attribute_id` | UUID | Yes | FK to `attribute_definition` |
+| `id` | Integer | Yes | |
+| `product_series_id` | Integer | Yes | FK to `product_series` |
+| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
 | `value` | Decimal | No | Numeric value in base units |
 | `value_text` | String | No | For string/enum/boolean/url types |
 | `display_unit` | String | No | Symbol of the entry unit |
@@ -607,22 +590,21 @@ Default attribute values for a product series, auto-populated to new items.
 
 ## 8. Core Item
 
-### `item` (CRR)
-The abstract catalog item — the orderable, reusable entity.
+### `item`
+The abstract catalog item — the orderable, reusable entity. An item belongs to one or more categories via `item_category`; there is no primary category.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `uuid` | UUID | Yes | |
 | `sku` | String | Yes | Soft-unique; mandatory stable internal key |
-| `parent_item_id` | UUID | No | FK to `item`; NULL = not a variant child |
-| `manufacturer_id` | UUID | No | FK to `manufacturer` |
+| `parent_item_uuid` | UUID | No | FK to `item`; NULL = not a variant child |
+| `manufacturer_id` | Integer | No | FK to `manufacturer` |
 | `part_number` | String | No | MPN or GPN |
-| `series_id` | UUID | No | FK to `product_series` |
-| `primary_category_id` | UUID | No | FK to `category`; single-cell primary |
+| `product_series_id` | Integer | No | FK to `product_series` |
 | `lifecycle_status_code` | String | Yes | FK to `lifecycle_status`; A/N/O/U |
 | `stock_mode_code` | String | Yes | FK to `stock_mode`; B/I |
 | `instance_kind_code` | String | Yes | FK to `instance_kind`; S/L |
-| `stock_unit_dimension_id` | UUID | No | FK to `unit_dimension`; NULL = dimensionless count |
+| `stock_unit_dimension_id` | Integer | No | FK to `unit_dimension`; NULL = dimensionless count |
 | `reorder_point` | Decimal | No | In stock units |
 | `reorder_qty` | Decimal | No | In stock units |
 | `safety_stock` | Decimal | No | In stock units |
@@ -631,36 +613,34 @@ The abstract catalog item — the orderable, reusable entity.
 | `nominal_footprint` | String | No | |
 | `barcode` | String | No | |
 | `asset_folder` | String | No | Path to attachments folder |
-| `ltspice_template_id` | UUID | No | FK to `ltspice_template` |
+| `ltspice_template_id` | Integer | No | FK to `ltspice_template` |
 | `ltspice_override_text` | String | No | |
 | `ltspice_generated` | String | No | Cached; invalidated by the recompute cascade |
-| `created_at` | Timestamp | Yes | |
-| `updated_at` | Timestamp | Yes | |
-| `deleted_at` | Timestamp | No | |
+| `created_ts` | Timestamp | Yes | |
+| `updated_ts` | Timestamp | Yes | |
+| `deleted_ts` | Timestamp | No | |
 
 Soft-unique business constraints (enforced by the service layer):
 - `sku` — unique among non-deleted items
 - `(manufacturer_id, part_number)` — unique MPN where both are present
 - `part_number` where `manufacturer_id` is absent — unique GPN
 
-### `item_category` (CRR)
-Membership: an item belongs to a category.
+### `item_category`
+Many-to-many membership: an item may belong to any number of categories in the unified forest. There is no primary category.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `item_id` | UUID | Yes | PK part; FK to `item` |
-| `category_id` | UUID | Yes | PK part; FK to `category` |
+| `item_uuid` | UUID | Yes | PK part; FK to `item` |
+| `category_id` | Integer | Yes | PK part; FK to `category` |
 
-Primary category is `item.primary_category_id`, not stored here.
-
-### `item_relationship` (CRR)
+### `item_relationship`
 Directed, ranked alternatives and equivalence graph. Relationships exist at any level in the parent-child hierarchy.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `item_id` | UUID | Yes | FK to `item`; source |
-| `related_item_id` | UUID | Yes | FK to `item`; target |
+| `uuid` | UUID | Yes | |
+| `item_uuid` | UUID | Yes | FK to `item`; source |
+| `related_item_uuid` | UUID | Yes | FK to `item`; target |
 | `relationship_type_code` | String | Yes | FK to `relationship_type`; X/A/E/M |
 | `symmetric` | Boolean | Yes | True = applies both ways |
 | `rank` | Integer | Yes | Preference order among multiple alternatives |
@@ -671,47 +651,47 @@ Directed, ranked alternatives and equivalence graph. Relationships exist at any 
 
 ## 9. Attribute Values
 
-### `item_attribute_value` (CRR)
+### `item_attribute_value`
 Catalog-layer attribute values on an item. One row per `(item, attribute)`.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `item_id` | UUID | Yes | PK part; FK to `item` |
-| `attribute_id` | UUID | Yes | PK part; FK to `attribute_definition` |
+| `item_uuid` | UUID | Yes | PK part; FK to `item` |
+| `attribute_definition_id` | Integer | Yes | PK part; FK to `attribute_definition` |
 | `value` | Decimal | No | Numeric value in base units (Numeric and Integer attributes) |
 | `value_text` | String | No | For String / Enum / Boolean / URL attributes |
 | `display_unit` | String | No | Symbol of the unit the value was entered in |
 | `value_raw` | JSON | No | Original entry preserved for round-trip display |
 | `provenance_code` | String | Yes | FK to `provenance`; T/N/U/M/O/V/D/C |
-| `provenance_context` | JSON | No | Source detail (PDF sha256, page, bbox, etc.) |
-| `updated_at` | Timestamp | Yes | |
+| `provenance_context` | JSON | No | Source detail (PDF page, bbox, etc.) |
+| `updated_ts` | Timestamp | Yes | |
 
 Tolerance is not a field here. It is a separate attribute definition in the appropriate dimension.
 
-### `item_attribute_component_value` (CRR)
+### `item_attribute_component_value`
 Per-component values for Composite attributes. One row per `(item, attribute, component)`.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `item_id` | UUID | Yes | PK part |
-| `attribute_id` | UUID | Yes | PK part; FK to composite `attribute_definition` |
-| `component_id` | UUID | Yes | PK part; FK to `attribute_component` |
+| `item_uuid` | UUID | Yes | PK part; FK to `item` |
+| `attribute_definition_id` | Integer | Yes | PK part; FK to composite `attribute_definition` |
+| `attribute_component_id` | Integer | Yes | PK part; FK to `attribute_component` |
 | `value` | Decimal | No | Numeric value in base units |
 | `value_text` | String | No | |
 | `display_unit` | String | No | |
 | `value_raw` | JSON | No | |
 | `provenance_code` | String | Yes | FK to `provenance`; T/N/U/M/O/V/D/C |
 | `provenance_context` | JSON | No | |
-| `updated_at` | Timestamp | Yes | |
+| `updated_ts` | Timestamp | Yes | |
 
-### `instance_measurement` (LOG)
+### `instance_measurement`
 Append-only measured values for tracked instances.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `instance_id` | UUID | Yes | FK to `item_instance` |
-| `attribute_id` | UUID | Yes | FK to `attribute_definition` |
+| `uuid` | UUID | Yes | |
+| `instance_uuid` | UUID | Yes | FK to `item_instance` |
+| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
 | `value` | Decimal | No | |
 | `value_text` | String | No | |
 | `display_unit` | String | No | |
@@ -719,64 +699,64 @@ Append-only measured values for tracked instances.
 | `provenance_code` | String | Yes | FK to `provenance`; M/O/V only |
 | `provenance_context` | JSON | No | |
 | `instrument` | String | No | |
-| `measured_at` | Timestamp | Yes | |
-| `hlc` | HLC | Yes | Causal ordering; current value = latest by (measured_at, hlc, id) |
+| `measured_ts` | Timestamp | Yes | |
+| `hlc` | HLC | Yes | Causal ordering; current value = latest by (measured_ts, hlc, uuid) |
 | `notes` | String | No | |
 
 ---
 
 ## 10. Instances
 
-### `item_instance` (CRR)
+### `item_instance`
 A tracked physical unit or batch.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `item_id` | UUID | Yes | FK to `item` |
+| `uuid` | UUID | Yes | |
+| `item_uuid` | UUID | Yes | FK to `item` |
 | `instance_ref` | String | No | Label / serial number |
 | `instance_kind_code` | String | Yes | FK to `instance_kind`; S/L |
 | `qty_initial` | Decimal | Yes | Initial quantity |
 | `status_code` | String | Yes | FK to `instance_status`; A/S/C/W/L |
-| `current_location_id` | UUID | No | FK to `location`; cached from events |
-| `acquisition_event_id` | UUID | No | FK to `inventory_event` |
+| `current_location_id` | Integer | No | FK to `location`; cached from events |
+| `acquisition_event_uuid` | UUID | No | FK to `inventory_event` |
 | `barcode` | String | No | |
 | `distinguishing_traits` | String | No | Per-unit quirks not in the catalog |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
 ---
 
 ## 11. Events & Costing
 
-### `inventory_event` (LOG)
+### `inventory_event`
 Immutable inventory fact. Insert-only.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `item_id` | UUID | Yes | FK to `item` |
-| `instance_id` | UUID | No | FK to `item_instance`; NULL = bulk pool |
+| `uuid` | UUID | Yes | |
+| `item_uuid` | UUID | Yes | FK to `item` |
+| `instance_uuid` | UUID | No | FK to `item_instance`; NULL = bulk pool |
 | `event_type_code` | String | Yes | FK to `event_type`; A/C/M/I/D/W/L |
 | `qty_change` | Decimal | Yes | Signed; negative for consumption/waste/loss |
 | `qty_unit` | String | No | Unit symbol if continuous stock |
 | `unit_cost_at_purchase` | Money | No | Acquisition cost per unit (per costing method) |
 | `unit_replacement_cost` | Money | No | Market replacement cost per unit at event time |
-| `project_id` | UUID | No | FK to `project`; set for CONSUME |
-| `vendor_offer_id` | UUID | No | FK to `vendor_offer` |
-| `invoice_line_id` | UUID | No | FK to `invoice_line` |
-| `build_id` | UUID | No | FK to `build` |
-| `individuation_group_id` | UUID | No | Groups paired INDIVIDUATE legs |
-| `from_location_id` | UUID | No | FK to `location`; source for CONSUME/MOVE/INDIVIDUATE |
-| `to_location_id` | UUID | No | FK to `location`; destination for ADD/MOVE/INDIVIDUATE |
+| `project_uuid` | UUID | No | FK to `project`; set for CONSUME |
+| `vendor_offer_uuid` | UUID | No | FK to `vendor_offer` |
+| `invoice_line_uuid` | UUID | No | FK to `invoice_line` |
+| `build_uuid` | UUID | No | FK to `build` |
+| `individuation_group_uuid` | UUID | No | Groups paired INDIVIDUATE legs |
+| `from_location_id` | Integer | No | FK to `location`; source for CONSUME/MOVE/INDIVIDUATE |
+| `to_location_id` | Integer | No | FK to `location`; destination for ADD/MOVE/INDIVIDUATE |
 | `effective_date` | Date | Yes | |
-| `hlc` | HLC | Yes | Causal clock; replay order: (effective_date, hlc, id) |
+| `hlc` | HLC | Yes | Causal clock; replay order: (effective_date, hlc, uuid) |
 | `reason` | String | No | Required by the service layer for ADJUST |
 | `notes` | String | No | |
-| `created_at` | Timestamp | Yes | |
+| `created_ts` | Timestamp | Yes | |
 
 Sign and location constraints are enforced by the service layer.
 
-### `currency` (CRR)
+### `currency`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
@@ -784,12 +764,12 @@ Sign and location constraints are enforced by the service layer.
 | `exponent` | Integer | Yes | Minor unit divisor exponent (e.g., 2 for USD) |
 | `symbol` | String | No | |
 
-### `fx_rate` (CRR)
+### `fx_rate`
 Exchange rate for multi-currency cost roll-ups.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `uuid` | UUID | Yes | |
 | `quote_code` | String | Yes | Foreign currency ISO 4217 code |
 | `rate` | Decimal | Yes | Units of quote_code per 1 home currency unit; exact |
 | `as_of_date` | Date | Yes | |
@@ -798,40 +778,40 @@ Exchange rate for multi-currency cost roll-ups.
 
 ## 12. Projects
 
-### `project` (CRR)
+### `project`
 A named work context that consumption events are linked to. Distinct from the physical location hierarchy.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `uuid` | UUID | Yes | |
 | `name` | String | Yes | |
 | `description` | String | No | |
 | `status_code` | String | Yes | FK to `project_status`; A/C/R |
-| `created_at` | Timestamp | Yes | |
-| `deleted_at` | Timestamp | No | |
+| `created_ts` | Timestamp | Yes | |
+| `deleted_ts` | Timestamp | No | |
 
 ---
 
 ## 13. Invoices
 
-### `invoice` (CRR)
+### `invoice`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `vendor_id` | UUID | Yes | FK to `vendor` |
+| `uuid` | UUID | Yes | |
+| `vendor_id` | Integer | Yes | FK to `vendor` |
 | `invoice_number` | String | No | |
 | `invoice_date` | Date | No | |
 | `currency` | String | Yes | ISO 4217 code |
-| `import_template_id` | UUID | No | FK to `import_template` |
-| `created_at` | Timestamp | Yes | |
+| `import_template_id` | Integer | No | FK to `import_template` |
+| `created_ts` | Timestamp | Yes | |
 
-### `invoice_line` (CRR)
+### `invoice_line`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `invoice_id` | UUID | Yes | FK to `invoice` |
+| `uuid` | UUID | Yes | |
+| `invoice_uuid` | UUID | Yes | FK to `invoice` |
 | `line_no` | Integer | Yes | |
 | `vendor_sku` | String | No | |
 | `part_number` | String | No | |
@@ -839,17 +819,17 @@ A named work context that consumption events are linked to. Distinct from the ph
 | `qty` | Decimal | Yes | |
 | `unit_price` | Money | No | |
 | `match_status_code` | String | Yes | FK to `match_status`; P/M/N/I |
-| `item_id` | UUID | No | FK to `item`; resolved match |
-| `vendor_offer_id` | UUID | No | FK to `vendor_offer` |
+| `item_uuid` | UUID | No | FK to `item`; resolved match |
+| `vendor_offer_uuid` | UUID | No | FK to `vendor_offer` |
 | `raw_data` | JSON | No | Original row preserved |
 
-### `import_template` (CRR)
+### `import_template`
 Saved column-mapping template for a vendor's invoice or BOM format.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `vendor_id` | UUID | No | FK to `vendor`; optional |
+| `id` | Integer | Yes | |
+| `vendor_id` | Integer | No | FK to `vendor`; optional |
 | `name` | String | Yes | |
 | `header_signature` | String | Yes | Hash/key for auto-detection |
 | `mapping` | JSON | Yes | Header → field map |
@@ -859,24 +839,24 @@ Saved column-mapping template for a vendor's invoice or BOM format.
 
 ## 14. Vendors & Pricing
 
-### `vendor` (CRR)
+### `vendor`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | Soft-unique |
 | `url` | String | No | |
 | `alt_names` | JSON | No | Array of alternate names |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
-### `vendor_offer` (CRR)
-A vendor's listing for a specific item. Soft-unique on `(item_id, vendor_id, vendor_sku)`.
+### `vendor_offer`
+A vendor's listing for a specific item. Soft-unique on `(item_uuid, vendor_id, vendor_sku)`.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `item_id` | UUID | Yes | FK to `item` |
-| `vendor_id` | UUID | Yes | FK to `vendor` |
+| `uuid` | UUID | Yes | |
+| `item_uuid` | UUID | Yes | FK to `item` |
+| `vendor_id` | Integer | Yes | FK to `vendor` |
 | `vendor_sku` | String | No | |
 | `url` | String | No | |
 | `currency` | String | Yes | ISO 4217 code |
@@ -886,27 +866,27 @@ A vendor's listing for a specific item. Soft-unique on `(item_id, vendor_id, ven
 | `availability_status_code` | String | Yes | FK to `availability_status`; I/O/B/L/D/U |
 | `qty_available` | Decimal | No | |
 | `lead_time_days` | Integer | No | |
-| `last_checked` | Timestamp | No | |
+| `last_checked_ts` | Timestamp | No | |
 | `is_active` | Boolean | Yes | |
 
-### `price_break` (CRR)
+### `price_break`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `offer_id` | UUID | Yes | FK to `vendor_offer` |
+| `uuid` | UUID | Yes | |
+| `offer_uuid` | UUID | Yes | FK to `vendor_offer` |
 | `qty_min` | Decimal | Yes | |
 | `qty_max` | Decimal | No | NULL = no upper bound |
 | `unit_price` | Money | Yes | |
 
-### `offer_history` (LOG)
+### `offer_history`
 Append-only point-in-time snapshots of a vendor offer's availability and representative price.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `offer_id` | UUID | Yes | FK to `vendor_offer` |
-| `captured_at` | Timestamp | Yes | |
+| `uuid` | UUID | Yes | |
+| `offer_uuid` | UUID | Yes | FK to `vendor_offer` |
+| `captured_ts` | Timestamp | Yes | |
 | `availability_status_code` | String | Yes | FK to `availability_status`; I/O/B/L/D/U |
 | `qty_available` | Decimal | No | |
 | `lead_time_days` | Integer | No | |
@@ -916,17 +896,17 @@ Append-only point-in-time snapshots of a vendor offer's availability and represe
 
 ## 15. Locations
 
-### `location` (CRR)
+### `location`
 Physical storage locations in a nested hierarchy. WASTE and LOST are event types and instance statuses — not location types.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | |
-| `parent_id` | UUID | No | FK to `location`; NULL = top-level |
+| `parent_id` | Integer | No | FK to `location`; NULL = top-level |
 | `description` | String | No | |
 | `barcode` | String | No | |
-| `deleted_at` | Timestamp | No | |
+| `deleted_ts` | Timestamp | No | |
 
 Hierarchy traversed via recursive queries on `parent_id`. No closure table.
 
@@ -934,206 +914,210 @@ Hierarchy traversed via recursive queries on `parent_id`. No closure table.
 
 ## 16. BOM & Build
 
-### `bom` (CRR)
+### `bom`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `uuid` | UUID | Yes | |
 | `name` | String | Yes | |
 | `description` | String | No | |
-| `produces_item_id` | UUID | No | FK to `item`; for sub-assembly BOMs |
-| `created_at` | Timestamp | Yes | |
-| `deleted_at` | Timestamp | No | |
+| `produces_item_uuid` | UUID | No | FK to `item`; for sub-assembly BOMs |
+| `created_ts` | Timestamp | Yes | |
+| `deleted_ts` | Timestamp | No | |
 
-### `bom_revision` (CRR)
+### `bom_revision`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `bom_id` | UUID | Yes | FK to `bom` |
+| `uuid` | UUID | Yes | |
+| `bom_uuid` | UUID | Yes | FK to `bom` |
 | `rev_label` | String | Yes | e.g., A, 1, 1.0 |
 | `status_code` | String | Yes | FK to `bom_status`; D/R/O |
 | `notes` | String | No | |
-| `released_at` | Timestamp | No | |
-| `created_at` | Timestamp | Yes | |
+| `released_ts` | Timestamp | No | |
+| `created_ts` | Timestamp | Yes | |
 
-### `bom_line` (CRR)
+### `bom_line`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `bom_revision_id` | UUID | Yes | FK to `bom_revision` |
+| `uuid` | UUID | Yes | |
+| `bom_revision_uuid` | UUID | Yes | FK to `bom_revision` |
 | `line_no` | Integer | Yes | |
-| `item_id` | UUID | No | FK to `item`; NULL = unresolved/imported line |
-| `qty_per` | Decimal | Yes | |
+| `item_uuid` | UUID | No | FK to `item`; NULL = unresolved/imported line |
+| `qty_per_assembly` | Decimal | Yes | |
 | `qty_unit` | String | No | Unit symbol if continuous |
 | `refdes` | String | No | Optional reference designators |
 | `do_not_populate` | Boolean | Yes | |
 | `notes` | String | No | |
 
-### `bom_line_substitute` (CRR)
+### `bom_line_substitute`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `bom_line_id` | UUID | Yes | FK to `bom_line` |
-| `item_id` | UUID | Yes | FK to `item` |
+| `uuid` | UUID | Yes | |
+| `bom_line_uuid` | UUID | Yes | FK to `bom_line` |
+| `item_uuid` | UUID | Yes | FK to `item` |
 | `rank` | Integer | Yes | |
 | `notes` | String | No | |
 
-### `build` (CRR)
+### `build`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `bom_revision_id` | UUID | Yes | FK to `bom_revision` |
+| `uuid` | UUID | Yes | |
+| `bom_revision_uuid` | UUID | Yes | FK to `bom_revision` |
 | `qty_built` | Decimal | Yes | |
-| `project_id` | UUID | Yes | FK to `project` |
+| `project_uuid` | UUID | Yes | FK to `project` |
 | `status_code` | String | Yes | FK to `build_status`; P/I/C/X |
-| `created_at` | Timestamp | Yes | |
+| `created_ts` | Timestamp | Yes | |
 
 ---
 
 ## 17. Tags, Formulas, Templates & Extraction
 
-### `tag` (CRR) / `item_tag` (CRR)
+### `tag` / `item_tag`
 
-`tag`: `id` UUID, `name` String (required), `deleted_at` Timestamp (optional).
-`item_tag`: `item_id` UUID (PK part), `tag_id` UUID (PK part).
+`tag`: `id` Integer, `name` String (required), `deleted_ts` Timestamp (optional).
+`item_tag`: `item_uuid` UUID (PK part; FK to `item`), `tag_id` Integer (PK part; FK to `tag`).
 
-### `attribute_formula` (CRR)
+### `attribute_formula`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | |
-| `target_attribute_id` | UUID | Yes | FK to `attribute_definition` |
+| `target_attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
 | `expression` | String | Yes | simpleeval + Pint |
 | `enabled` | Boolean | Yes | |
 
-### `formula_input` (CRR)
+### `formula_input`
 Maps expression symbols to source attributes.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `formula_id` | UUID | Yes | FK to `attribute_formula` |
+| `id` | Integer | Yes | |
+| `attribute_formula_id` | Integer | Yes | FK to `attribute_formula` |
 | `symbol` | String | Yes | e.g., $r for Resistance |
-| `attribute_id` | UUID | Yes | FK to `attribute_definition` |
+| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
 | `layer_code` | String | Yes | FK to `formula_layer`; C/I/E |
 
-### `formula_category` (CRR)
+### `formula_category`
 Applicable categories for a formula.
 
-`formula_id` UUID (PK part), `category_id` UUID (PK part).
+`attribute_formula_id` Integer (PK part; FK to `attribute_formula`), `category_id` Integer (PK part; FK to `category`).
 
-### `ltspice_template` (CRR)
+### `ltspice_template`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `id` | Integer | Yes | |
 | `name` | String | Yes | |
-| `category_id` | UUID | No | FK to `category` |
+| `category_id` | Integer | No | FK to `category` |
 | `template_type_code` | String | Yes | FK to `ltspice_template_type`; M/S/Y/P |
 | `body` | String | Yes | Jinja2 |
 
-### `ltspice_template_param` (CRR)
-`id` UUID, `template_id` UUID, `var_name` String (required), `attribute_id` UUID.
+### `ltspice_template_param`
+`id` Integer, `ltspice_template_id` Integer (FK to `ltspice_template`), `var_name` String (required), `attribute_definition_id` Integer (FK to `attribute_definition`).
 
-### `datasheet_extraction` (CRR)
+### `datasheet_extraction`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `attachment_id` | UUID | Yes | FK to `attachment` |
-| `item_id` | UUID | No | FK to `item` |
+| `uuid` | UUID | Yes | |
+| `attachment_uuid` | UUID | Yes | FK to `attachment` |
+| `item_uuid` | UUID | No | FK to `item` |
 | `page_number` | Integer | No | |
 | `bbox_x` | Integer | No | Bounding box coordinates |
 | `bbox_y` | Integer | No | |
 | `bbox_w` | Integer | No | |
 | `bbox_h` | Integer | No | |
 | `extracted_text` | String | No | |
-| `mapped_attribute_id` | UUID | No | FK to `attribute_definition` |
+| `mapped_attribute_definition_id` | Integer | No | FK to `attribute_definition` |
 | `value` | Decimal | No | Extracted numeric value in base units |
 | `confidence` | Integer | No | 0–100 |
 | `status_code` | String | Yes | FK to `extraction_status`; P/A/R |
-| `reviewed_by_user_id` | UUID | No | FK to `user` |
+| `reviewed_user_uuid` | UUID | No | FK to `user` |
 
 ---
 
 ## 18. Attachments, Settings & Users
 
-### `attachment` (CRR)
+### `attachment`
+A file record with no knowledge of its owner. Items and invoices each maintain their own collection via a junction table.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `owner_type_code` | String | Yes | FK to `attachment_owner_type`; I/N/V/M |
-| `owner_id` | UUID | Yes | FK to the owner entity |
-| `role_code` | String | Yes | FK to `attachment_role`; P/D/O/M/X |
+| `uuid` | UUID | Yes | |
+| `file_type_code` | String | Yes | FK to `file_type`; P/D/O/M/X |
 | `file_path` | String | Yes | Relative to user-data directory |
-| `mime_type` | String | No | |
-| `sha256` | String | No | |
-| `caption` | String | No | |
-| `sort_order` | Integer | Yes | |
-| `page_count` | Integer | No | |
-| `created_at` | Timestamp | Yes | |
+| `description` | String | No | |
+| `created_ts` | Timestamp | Yes | |
+| `updated_ts` | Timestamp | Yes | |
+| `deleted_ts` | Timestamp | No | Tombstone |
 
-### `app_setting` (CRR)
+### `item_attachment`
+Ordered attachment collection for a catalog item.
+
+| Attribute | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `item_uuid` | UUID | Yes | PK part; FK to `item` |
+| `attachment_uuid` | UUID | Yes | PK part; FK to `attachment` |
+| `sort_order` | Integer | Yes | Order within the item's collection |
+
+### `invoice_attachment`
+Ordered attachment collection for an invoice.
+
+| Attribute | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `invoice_uuid` | UUID | Yes | PK part; FK to `invoice` |
+| `attachment_uuid` | UUID | Yes | PK part; FK to `attachment` |
+| `sort_order` | Integer | Yes | Order within the invoice's collection |
+
+### `app_setting`
 Synced user preferences. Key examples: `home_currency`, `default_unit_{dimension_id}`, `default_grid_config`, `costing_method`.
 
 `key` String (primary key), `value` JSON (required).
 
-### `device_setting` (LOCAL)
+### `device_setting`
 Device-local preferences. Never synced.
 
 `key` String (primary key), `value` JSON (required).
 
-### `user` (CRR)
+### `user`
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `id` | UUID | Yes | |
+| `uuid` | UUID | Yes | |
 | `username` | String | Yes | Soft-unique |
 | `display_name` | String | Yes | |
 | `is_active` | Boolean | Yes | |
-| `created_at` | Timestamp | Yes | |
-| `deleted_at` | Timestamp | No | |
+| `created_ts` | Timestamp | Yes | |
+| `deleted_ts` | Timestamp | No | |
 
-### `role` (CRR) / `permission` (CRR) / `role_permission` (CRR) / `user_role` (CRR)
+### `role` / `permission` / `role_permission` / `user_role`
 Defined now for future RBAC enforcement. Seeded and enforced in a later phase.
 
-`role`: `id` UUID, `name` String, `description` String (optional).
-`permission`: `id` UUID, `key` String (e.g., `item.edit`), `description` String (optional).
-`role_permission`: `role_id` UUID (PK part), `permission_id` UUID (PK part).
-`user_role`: `user_id` UUID (PK part), `role_id` UUID (PK part).
-
-### `audit_log` (LOG)
-
-| Attribute | Type | Required | Notes |
-|-----------|------|----------|-------|
-| `id` | UUID | Yes | |
-| `user_id` | UUID | Yes | FK to `user` |
-| `at` | Timestamp | Yes | |
-| `entity_table` | String | Yes | |
-| `entity_id` | UUID | Yes | |
-| `action_code` | String | Yes | FK to `audit_action`; C/U/D |
-| `change_summary` | JSON | No | |
-
-Off by default in single-user mode. Enabled when a second user is added — no migration required because attribution was recorded from day one.
+`role`: `uuid` UUID, `name` String, `description` String (optional).
+`permission`: `uuid` UUID, `key` String (e.g., `item.edit`), `description` String (optional).
+`role_permission`: `role_uuid` UUID (PK part), `permission_uuid` UUID (PK part).
+`user_role`: `user_uuid` UUID (PK part), `role_uuid` UUID (PK part).
 
 ---
 
-## 19. LOCAL Derived Entities (Read Model)
+## 19. Derived Entities (Read Model)
 
-These entities are never synced. They are rebuilt in full after every sync merge and maintained incrementally by database triggers for local writes.
+Each read-model aggregate keeps a **materialized running value up to a watermark**. A read always returns the materialized snapshot plus the fold of events past the watermark (the uncompacted tail), so values are **always correct** regardless of when aggregation last ran. Aggregation advances the watermark by folding the tail into the snapshot — it is compaction for performance, never required for correctness. Timing is configurable per read-model: on open, on close, every N minutes, on demand, or any combination.
 
-### `rm_item_stock` (LOCAL)
+Triggers maintain incremental updates for local writes. A full rebuild is available for migrations or restores.
+
+### `rm_item_stock`
 Per-item stock aggregates derived from `inventory_event`.
 
 | Attribute | Type | Notes |
 |-----------|------|-------|
-| `item_id` | UUID | Primary key |
+| `item_uuid` | UUID | Primary key |
+| `watermark_uuid` | UUID | UUID of the last `inventory_event` folded into the snapshot; NULL = no events yet aggregated |
 | `qty_available` | Decimal | |
 | `qty_assigned` | Decimal | |
 | `qty_waste` | Decimal | |
@@ -1141,30 +1125,32 @@ Per-item stock aggregates derived from `inventory_event`.
 | `avg_landed_cost` | Money | In home currency |
 | `last_unit_cost` | Money | In home currency |
 
-### `rm_stock_by_location` (LOCAL)
+### `rm_stock_by_location`
 Per-item, per-location, per-stock-mode stock.
 
 | Attribute | Type | Notes |
 |-----------|------|-------|
-| `item_id` | UUID | PK part |
-| `location_id` | UUID | PK part |
+| `item_uuid` | UUID | PK part |
+| `location_id` | Integer | PK part |
 | `stock_mode_code` | String | PK part; FK to `stock_mode`; B=bulk pool, I=tracked instances |
+| `watermark_uuid` | UUID | UUID of the last event folded in; NULL = not yet aggregated |
 | `qty` | Decimal | |
 
-### `rm_instance_state` (LOCAL)
+### `rm_instance_state`
 Current state of each tracked instance.
 
 | Attribute | Type | Notes |
 |-----------|------|-------|
-| `instance_id` | UUID | Primary key |
-| `current_location_id` | UUID | |
+| `instance_uuid` | UUID | Primary key |
+| `watermark_uuid` | UUID | UUID of the last event folded in; NULL = not yet aggregated |
+| `current_location_id` | Integer | |
 | `qty_remaining` | Decimal | |
 | `status_code` | String | FK to `instance_status`; A/S/C/W/L |
 
-### `fts_item` (LOCAL)
-Full-text search index over item names, descriptions, SKUs, part numbers, markings, tags, and reference designators. Each dimensional attribute value is indexed in both its as-entered form and its canonical base-unit form. Maintained by triggers; rebuilt after sync merge.
+### `fts_item`
+Full-text search index over item names, descriptions, SKUs, part numbers, markings, tags, and reference designators. Each dimensional attribute value is indexed in both its as-entered form and its canonical base-unit form. Maintained by triggers.
 
-### `rm_thumbnail` (LOCAL)
+### `rm_thumbnail`
 Cached thumbnail file paths and metadata for attachments.
 
 ---
@@ -1177,14 +1163,15 @@ The following access patterns drive the critical indexes. Physical index definit
 |----------------|-------------------|
 | Parametric search: attribute value range | `item_attribute_value` by `(attribute_id, value)` |
 | Parametric search: component value range | `item_attribute_component_value` by `(attribute_id, component_id, value)` |
-| Event replay and costing | `inventory_event` by `(item_id, effective_date, hlc, id)` |
+| Event replay and costing | `inventory_event` by `(item_uuid, effective_date, hlc, uuid)` |
 | Stock aggregation by location | `inventory_event` by `from_location_id`, `to_location_id` |
-| Current instance measurement | `instance_measurement` by `(instance_id, attribute_id, measured_at, hlc, id)` |
+| Current instance measurement | `instance_measurement` by `(instance_uuid, attribute_id, measured_ts, hlc, uuid)` |
 | Category tree traversal | `category` by `parent_id` |
+| Category subtree lookup | `category` by `id_path` (prefix search) |
 | Location tree traversal | `location` by `parent_id` |
-| Item variant navigation | `item` by `parent_item_id` |
-| Offer lookup | `vendor_offer` by `item_id`; `price_break` by `offer_id` |
-| Soft-delete filtering | `deleted_at` on all tombstoned entities |
+| Item variant navigation | `item` by `parent_item_uuid` |
+| Offer lookup | `vendor_offer` by `item_uuid`; `price_break` by `offer_uuid` |
+| Soft-delete filtering | `deleted_ts` on all tombstoned entities |
 | Full-text search | `fts_item` (FTS5 with trigram tokenizer) |
 | Code table lookup | Each `*_code` column by its value |
 
@@ -1192,13 +1179,13 @@ The following access patterns drive the critical indexes. Physical index definit
 
 ## 21. Migrations
 
-### `schema_migration` (LOCAL)
+### `schema_migration`
 
 | Attribute | Type | Notes |
 |-----------|------|-------|
 | `version` | String | Primary key |
 | `name` | String | |
 | `checksum` | String | SHA-256 of migration file |
-| `applied_at` | Timestamp | |
+| `applied_ts` | Timestamp | |
 
 Migrations are sequential, transactional, and idempotent. Each migration is wrapped in a transaction. Checksums detect post-application modification. Forward-only policy; destructive changes use data-migration hooks. Code table seed data is inserted in migrations. The minimum compatible schema version is embedded in the application for sync compatibility enforcement.
