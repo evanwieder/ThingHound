@@ -452,9 +452,9 @@ The Session is the coordinator (`architecture.md §4.6`): connection, transactio
 
 **Files:** `src/thinghound/registry.py`, `tests/test_registry.py`.
 
-- [x] **Step 1: failing test** — accessors raise `RegistryNotLoadedError` before `load`.
-- [x] **Step 2: run → fail. Step 3: implement** `AppRegistry` skeleton: a `load(session)` hook (sets `_loaded`; the **real** mapper-driven population of dimensions/multipliers/prefixes/attribute categories+definitions/category tree/grid configs is Track-2 U1) and accessors (`unit_dimensions()`, `attribute_definitions()`, `category_tree()`, `factors_for(dimension_id)`) that raise until loaded. The registry calls **mappers** to load (in Track 2); it never issues raw row↔model conversion itself.
-- [x] **Step 4: run → pass; commit** `feat: AppRegistry skeleton (structure load hook)`.
+- [ ] **Step 1: failing test** — accessors raise `RegistryNotLoadedError` before `load`.
+- [ ] **Step 2: run → fail. Step 3: implement** `AppRegistry` skeleton: a `load(session)` hook (sets `_loaded`; the **real** mapper-driven population of dimensions/multipliers/prefixes/attribute categories+definitions/category tree/grid configs is Track-2 U1) and accessors (`unit_dimensions()`, `attribute_definitions()`, `category_tree()`, `factors_for(dimension_id)`) that raise until loaded. The registry calls **mappers** to load (in Track 2); it never issues raw row↔model conversion itself.
+- [ ] **Step 4: run → pass; commit** `feat: AppRegistry skeleton (structure load hook)`.
 
 ---
 
