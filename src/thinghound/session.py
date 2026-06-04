@@ -17,6 +17,11 @@ class Session:
         self._connection = connection
         self._identity_map: dict[tuple[type, object], object] = {}
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """Expose underlying connection for mapper/query coordination."""
+        return self._connection
+
     @contextmanager
     def transaction(self) -> Generator[None, None, None]:
         """Execute a transaction scope.

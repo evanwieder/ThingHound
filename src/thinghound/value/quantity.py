@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from thinghound.value_codec import decode_scaled, encode_scaled
+from thinghound.value.encoding import decode_scaled, encode_scaled
 
 QUANTITY_SCALE = 6
 

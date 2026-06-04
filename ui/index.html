@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ThingHound</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app" class="layout-root">
+      <header class="toolbar">ThingHound</header>
+      <main class="workspace" id="workspace">
+        <aside class="pane pane-left" id="pane-left">Category Tree</aside>
+        <div class="sash sash-left" data-sash="left"></div>
+        <section class="pane pane-center" id="pane-center">
+          <div class="grid-region">Grid</div>
+          <div class="sash sash-bottom" data-sash="bottom"></div>
+          <div class="filter-region" id="filter-region">Filter Strip</div>
+        </section>
+        <div class="sash sash-right" data-sash="right"></div>
+        <aside class="pane pane-right" id="pane-right">Inspector</aside>
+      </main>
+      <footer class="status-bar">Ready</footer>
+    </div>
+    <script src="./main.js"></script>
+  </body>
+</html>
