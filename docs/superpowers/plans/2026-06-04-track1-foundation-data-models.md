@@ -1,6 +1,8 @@
 # Track 1 — Foundation & Data Models Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development (or superpowers:executing-plans). One careful worker; TDD throughout; commit per task **only after explicit user authorization to begin coding**. Read `coding_standards.md` and the relevant `docs/dev/agent/standards-*.md` before each task. Checkbox (`- [ ]`) steps track progress.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+> One careful worker; TDD throughout; commit per task **only after explicit user authorization to begin coding**. Read `coding_standards.md` and the relevant `docs/dev/agent/standards-*.md` before each task.
 
 **Authoritative sources:** `docs/specs/thinghound-{functional-spec,architecture,data-model}.md`, `docs/dev/standards-*.md`, `docs/dev/crsqlite-spike-findings.md`, `docs/dev/crr-rules.md`. Where this plan and a doc disagree, the doc wins.
 
@@ -10,7 +12,7 @@
 
 **Layering reminder (program plan §1):** the **Session/Unit-of-Work owns the connection, transaction scope, and identity map only — no table SQL and no row↔model conversion.** Conversion is the aggregate mapper's job (Track 2). Models convert their own values (scaled-int ↔ exact, `Money`). Keep these boundaries intact here so Track 2 can rely on them.
 
-**Reference (consult for algorithms only; never copy verbatim, always reconcile to current docs):** `/home/evan/Projects/thinghound-preserved-20260603/reference-old-code/` — `ids.py`, `money.py`, `units/scale.py`, `db/connection.py`, `db/migrations.py`, `scripts/check_crr_rules.py`. **Every reuse must drop the prohibited `from __future__ import annotations` (PEP 649) and take `scale` as a per-attribute parameter, never read it from a dimension.** The old `repository.py` is the antipattern being replaced — do not consult it.
+**Reference (consult for algorithms only; never copy verbatim, always reconcile to current docs):** preserved legacy code that may contain useful algorithm references for `ids.py`, `money.py`, `units/scale.py`, `db/connection.py`, `db/migrations.py`, `scripts/check_crr_rules.py`. **The reference tree is not present in this repo by default.** Before any task that names it as a source, the orchestrator must either (a) vendor the specific reference files into `docs/dev/reference/` so any worker on any machine can find them, or (b) supply the worker the current macOS path to a local checkout. If neither is available, **derive the algorithm from the specs and standards alone** — do not invent a path or attempt to read a Linux path on macOS. **Every reuse must drop the prohibited `from __future__ import annotations` (PEP 649) and take `scale` as a per-attribute parameter, never read it from a dimension.** The old `repository.py` is the antipattern being replaced — do not consult it.
 
 ---
 
@@ -174,29 +176,96 @@ All 26 code tables from `data-model.md §3` (`value_type`, `value_kind_hint`, `s
 
 ---
 
-## Task 10: Migrations 0002…00NN — full CRR/LOG/LOCAL schema
+## Task 10: Migrations 0002–0013 — full CRR/LOG/LOCAL schema (one task per group)
 
-**Files:** `migrations_sql/000N_*.sql` (one per domain group), `tests/db/test_schema.py`.
+**Files:** `migrations_sql/000N_<name>.sql` (one per domain group), `tests/db/test_schema_<name>.py`.
 
-DDL for **every** entity in `data-model.md §4–§19`, grouped: 0002 config/schema · 0003 category/display · 0004 identity/item · 0005 attr-values · 0006 instances/events/currency/fx · 0007 vendor/pricing · 0008 project/invoice · 0009 bom/build · 0010 misc (tags/formula/ltspice/extraction) · 0011 admin (attachment/settings/user/rbac/audit) · 0012 LOCAL read-model (rm_* + FTS5) · 0013 indexes (§20).
+DDL for **every** entity in `data-model.md §4–§19`. Each sub-task below is **one migration file, one matching schema-shape test file, one commit**. Field lists come **verbatim** from `data-model.md`; do not invent columns.
 
-**DDL rules (the CRR guard enforces them):**
+**DDL rules (the CRR guard from Task 8 enforces them on every group below):**
 - PK `id BLOB PRIMARY KEY` (UUIDv7 bytes); junctions use composite PK; code/natural-key tables as specified.
 - Every non-PK `NOT NULL` column has a `DEFAULT`; prefer **nullable + service-enforced "required"** where a default is unnatural (spike findings).
 - **No** `FOREIGN KEY`/`REFERENCES`, **no** `AUTOINCREMENT`, **no** `REAL`, **no** secondary `UNIQUE` on natural keys (SKU/MPN/manufacturer name — uniqueness is service-enforced, `architecture.md §6.5`).
 - **No cross-column `CHECK`.** Single-column tombstone checks allowed.
 - Attribution: `created_by_user_id BLOB DEFAULT NULL`, `updated_by_user_id BLOB DEFAULT NULL` on every CRR table; `user_id BLOB DEFAULT NULL` on every LOG table.
-- Logical `Decimal` is encoded **by role** (`architecture.md §9`, "Decimal encoding by role"): **attribute values** → `*_scaled INTEGER` + `*_exact TEXT` at the owning `attribute_definition.scale`; **quantities** (`qty_*`, `moq`, `order_multiple`, `reorder_*`, `safety_stock`, read-model `qty_*`) → `*_scaled INTEGER` + `*_exact TEXT` at **fixed quantity scale 6**; **factors/rates** (`unit_multiplier.factor`, `prefix.factor`, `fx_rate.rate`) → **single `*_exact TEXT`**, no `*_scaled`. Logical `Money` → `*_minor INTEGER` + `*_currency TEXT`. `-- sync:` comment above every `CREATE`.
+- Logical `Decimal` is encoded **by role** (`architecture.md §9`): **attribute values** → `*_scaled INTEGER` + `*_exact TEXT` at the owning `attribute_definition.scale`; **quantities** (`qty_*`, `moq`, `order_multiple`, `reorder_*`, `safety_stock`, read-model `qty_*`) → `*_scaled INTEGER` + `*_exact TEXT` at **fixed quantity scale 6**; **factors/rates** (`unit_multiplier.factor`, `prefix.factor`, `fx_rate.rate`) → **single `*_exact TEXT`**, no `*_scaled`. Logical `Money` → `*_minor INTEGER` + `*_currency TEXT`. `-- sync:` comment above every `CREATE`.
 - `Timestamp`/`Date` columns are `INTEGER` epoch (epoch ms, UTC), never `TEXT`; the mapper (Track 2) encodes ISO-8601 ↔ epoch at the storage boundary. `HLC` columns are `TEXT`.
 
-- [ ] **Cross-cutting test** — `test_no_migration_violates_crr_rules`: every `*.sql` passes `check_sql`. Plus per-group "applies clean to a fresh db" and targeted shape tests (e.g. no UNIQUE on `item.sku`; `inventory_event` is LOG-shaped).
-- [ ] Per group 0002→0013, write DDL test-first, green the guard + apply tests, **commit per group**. FTS5 `fts_item` is external-content + trigram; the `rm_item_stock` trigger *logic* is owned by Track-2 U5 (note the handoff — 0012 may create the table and leave trigger bodies to U5).
+**Per-group rhythm (apply to every sub-task 10a–10l):**
+1. Write the named failing schema-shape test (specific assertions below per group).
+2. `pytest -q tests/db/test_schema_<name>.py` → FAIL (table/column missing).
+3. Write the DDL in `migrations_sql/000N_<name>.sql`, one `-- sync:` comment per `CREATE`.
+4. `pytest -q tests/db/test_schema_<name>.py` → PASS; `python scripts/check_crr_rules.py migrations_sql/000N_<name>.sql` → zero violations.
+5. Run the cross-cutting `test_no_migration_violates_crr_rules` (all `*.sql` pass `check_sql`).
+6. **Commit (after authorization):** `feat(migrations): 000N <name>`.
 
-> Field lists come **verbatim** from `data-model.md §4–§19`. Do not invent columns. Expand `Decimal`/`Money` to their two-column physical encoding. Prefer nullable + service enforcement when NOT NULL is awkward under cr-sqlite.
+### Task 10a — `0002_config_schema.sql` — config & schema registry
+**Tables (`data-model.md §4`):** `unit_dimension`, `unit_multiplier`, `prefix_set`, `prefix`, `attribute_category`, `attribute_definition`, `attribute_allowed_prefix`, `attribute_enum_value`, `attribute_component`.
+- [ ] Failing test `test_schema_config`: `unit_dimension.id` is BLOB PK; `attribute_definition.scale` is INTEGER NOT NULL DEFAULT 0; `attribute_definition` has no secondary UNIQUE on `(name, attribute_category_id)`; `attribute_component.parent_attribute_definition_id` and `child_attribute_definition_id` both present; every CRR table has `created_by_user_id BLOB DEFAULT NULL` and `updated_by_user_id BLOB DEFAULT NULL`.
+- [ ] Implement; run; CRR guard clean; commit `feat(migrations): 0002 config & schema registry`.
+
+### Task 10b — `0003_category_display.sql` — category & display profile
+**Tables (`data-model.md §5–§6`):** `category`, `category_attribute`, `display_profile`, `display_column`, `category_column_mapping`, `grid_configuration`, `grid_configuration_column`, `grid_configuration_grouping`.
+- [ ] Failing test `test_schema_category_display`: `category.parent_id` BLOB DEFAULT NULL (self-referencing without FK); `category_attribute` composite PK `(category_id, attribute_definition_id)`; `display_column.id` is BLOB PK; `grid_configuration_column` has `position INTEGER NOT NULL DEFAULT 0`.
+- [ ] Implement; commit `feat(migrations): 0003 category & display`.
+
+### Task 10c — `0004_identity_item.sql` — identity & item
+**Tables (`data-model.md §7–§8`):** `manufacturer`, `product_series`, `series_attribute_default`, `item`, `item_category`, `item_relationship`.
+- [ ] Failing test `test_schema_identity_item`: `item` has `sku TEXT DEFAULT NULL` with **no secondary UNIQUE** (uniqueness is service-enforced); `manufacturer_name` likewise; `item.primary_category_id BLOB DEFAULT NULL`; `item_category` composite PK `(item_id, category_id)`; `item_relationship.relationship_type_code TEXT NOT NULL DEFAULT ''`.
+- [ ] Implement; commit `feat(migrations): 0004 identity & item`.
+
+### Task 10d — `0005_attr_values.sql` — item attribute values
+**Tables (`data-model.md §9`):** `item_attribute_value`, `item_attribute_component_value`.
+- [ ] Failing test `test_schema_attr_values`: `item_attribute_value` has `value_scaled INTEGER DEFAULT NULL`, `value_exact TEXT DEFAULT NULL`, `value_raw TEXT DEFAULT NULL`, `display_unit TEXT DEFAULT NULL`, `provenance_code TEXT NOT NULL DEFAULT ''`; **no cross-column CHECK** between `value_scaled` and `value_exact` (that invariant is service-enforced); composite component value table mirrors structure.
+- [ ] Implement; commit `feat(migrations): 0005 attribute values`.
+
+### Task 10e — `0006_instances_events_currency_fx.sql`
+**Tables (`data-model.md §10–§12`):** `item_instance`, `instance_measurement`, `inventory_event` (**LOG**), `currency`, `fx_rate`.
+- [ ] Failing test `test_schema_inventory`: `inventory_event` is LOG-shaped — `-- sync: LOG` comment present, `user_id BLOB DEFAULT NULL` (LOG attribution form), `(effective_date INTEGER, hlc TEXT, id BLOB)` columns all present, no UPDATE-style attribution; `fx_rate.rate_exact TEXT DEFAULT NULL` with **no** `rate_scaled`; `currency.code TEXT PRIMARY KEY` (ISO-4217 code is the key).
+- [ ] Implement; commit `feat(migrations): 0006 instances, events, currency, FX`.
+
+### Task 10f — `0007_vendor_pricing.sql`
+**Tables (`data-model.md §13`):** `vendor`, `vendor_offer`, `price_break`, `offer_history` (**LOG**).
+- [ ] Failing test `test_schema_vendor`: `vendor_offer.unit_price_minor INTEGER DEFAULT NULL` + `unit_price_currency TEXT DEFAULT NULL`; `price_break.qty_min_scaled INTEGER DEFAULT NULL` + `qty_min_exact TEXT DEFAULT NULL` (quantity scale 6); `offer_history` is LOG-shaped.
+- [ ] Implement; commit `feat(migrations): 0007 vendor & pricing`.
+
+### Task 10g — `0008_project_invoice.sql`
+**Tables (`data-model.md §14`):** `project`, `invoice`, `invoice_line`, `import_template`.
+- [ ] Failing test `test_schema_project_invoice`: `invoice_line.qty_scaled INTEGER DEFAULT NULL` + `qty_exact TEXT DEFAULT NULL`; `invoice_line.matched_item_id BLOB DEFAULT NULL`; `import_template.template_json TEXT NOT NULL DEFAULT '{}'`.
+- [ ] Implement; commit `feat(migrations): 0008 project & invoice`.
+
+### Task 10h — `0009_bom_build.sql`
+**Tables (`data-model.md §15`):** `bom`, `bom_revision`, `bom_line`, `bom_line_substitute`, `build`.
+- [ ] Failing test `test_schema_bom_build`: `bom_revision.status_code TEXT NOT NULL DEFAULT ''` (DRAFT/RELEASED/OBSOLETE in REF table 0001); `bom_line.qty_per_scaled INTEGER DEFAULT NULL` + `qty_per_exact TEXT DEFAULT NULL`; `bom_line_substitute` composite PK `(bom_line_id, substitute_item_id)`; `build.status_code TEXT NOT NULL DEFAULT ''`.
+- [ ] Implement; commit `feat(migrations): 0009 BOM & build`.
+
+### Task 10i — `0010_misc.sql` — tags, formula, LTspice, extraction
+**Tables (`data-model.md §16`):** `tag`, `item_tag`, `formula`, `formula_version`, `ltspice_template`, `extraction_job`.
+- [ ] Failing test `test_schema_misc`: `item_tag` composite PK `(item_id, tag_id)`; `formula.layer_code TEXT NOT NULL DEFAULT ''`; `extraction_job.status_code TEXT NOT NULL DEFAULT ''`; `tag.name TEXT NOT NULL DEFAULT ''` (no secondary UNIQUE — service-enforced).
+- [ ] Implement; commit `feat(migrations): 0010 misc`.
+
+### Task 10j — `0011_admin.sql` — attachments, settings, users, RBAC, audit
+**Tables (`data-model.md §17–§19`):** `attachment`, `app_setting`, `device_setting` (LOCAL), `user`, `role`, `user_role`, `audit_log` (LOG).
+- [ ] Failing test `test_schema_admin`: `attachment.owner_type_code TEXT NOT NULL DEFAULT ''` + `owner_id BLOB DEFAULT NULL` (polymorphic owner, no FK); `device_setting` is `-- sync: LOCAL`; `user_role` composite PK `(user_id, role_id)`; `audit_log` is LOG-shaped (`user_id BLOB DEFAULT NULL`, `action_code TEXT NOT NULL DEFAULT ''`, `at INTEGER NOT NULL DEFAULT 0`).
+- [ ] Implement; commit `feat(migrations): 0011 admin`.
+
+### Task 10k — `0012_local_read_models.sql` — LOCAL read-model tables + FTS5
+**Tables:** `rm_item_stock`, `rm_stock_by_location`, `rm_instance_state`, `rm_thumbnail`, `fts_item` (FTS5 external-content + trigram tokenizer).
+- [ ] Failing test `test_schema_read_models`: every `rm_*` table is `-- sync: LOCAL`; `rm_item_stock.qty_on_hand_scaled INTEGER NOT NULL DEFAULT 0` + `qty_on_hand_exact TEXT NOT NULL DEFAULT '0'`; `fts_item` is created with `tokenize='trigram'` and `content='item'` (external-content). **Trigger bodies for `rm_item_stock` maintenance are owned by Track-2 U5** — this migration may create the table and leave triggers to U5, or create stub triggers that U5 replaces. Document the handoff in the SQL file's leading comment.
+- [ ] Implement; commit `feat(migrations): 0012 LOCAL read-models + FTS5`.
+
+### Task 10l — `0013_indexes.sql` — performance indexes (`data-model.md §20`)
+- [ ] Failing test `test_schema_indexes`: every named index from §20 exists in `sqlite_master`; no index is on a column that violates DDL rules (e.g. no index on a `REAL` column — there are none).
+- [ ] Implement; commit `feat(migrations): 0013 indexes`.
+
+### Task 10-final — cross-cutting verification
+- [ ] **Cross-cutting test** `test_no_migration_violates_crr_rules`: every `migrations_sql/*.sql` file passes `check_sql` with zero violations (LOCAL/REF tables exempt per their `-- sync:` comments).
+- [ ] **Cross-cutting test** `test_migrations_apply_cleanly`: `apply_all(connect(":memory:"))` succeeds; `applied_versions` returns `["0001","0002",…,"0013"]`; a second `apply_all` is a no-op.
+- [ ] **Commit (after authorization):** `test(migrations): cross-cutting CRR + apply-clean coverage`.
 
 ---
 
-## Task 11: Pydantic domain models (all entities)
+## Task 11: Pydantic domain models (one task per domain subpackage)
 
 **Files:** `src/thinghound/models/<domain>/<entity>.py` (one class per file), `tests/models/<domain>/test_<entity>.py`.
 
@@ -204,7 +273,20 @@ A frozen Pydantic model for **every** entity in `data-model.md §4–§19` (REF 
 
 **Models own their own value conversion** (encode/decode of `ScaledValue`, `Money`) — but they do **not** read or write the database, and they do **not** know about rows. (Row↔model assembly is the mapper's job in Track 2.) Timestamp/date fields carry **ISO-8601 strings** in the model (e.g. `deleted_at: str | None`); the mapper converts them to/from the SQLite epoch integer — models never hold the epoch int.
 
-Worked example — `src/thinghound/models/schema/unit_dimension.py`:
+**Per-entity rhythm (apply to every entity in every sub-task below):**
+1. Write the failing model test: construct with valid fields; assert one model-level invariant (e.g. non-v7 id rejected; `frozen=True` rejects mutation; `*_code` field accepts `str`).
+2. `pytest -q tests/models/<domain>/test_<entity>.py` → FAIL.
+3. Implement `src/thinghound/models/<domain>/<entity>.py` (one class per file), mirroring `data-model.md` field list **verbatim**. Justify each `X | None` in a field comment.
+4. `pytest -q tests/models/<domain>/test_<entity>.py` → PASS.
+5. Add model validators only for **single-entity** invariants (cross-entity checks are service-layer).
+
+**Per-sub-task commit (after authorization):** one commit per domain subpackage — `feat(models): <domain> entities`.
+
+---
+
+### Worked example A — simple entity (single value, no `ScaledValue`/`Money`)
+
+`src/thinghound/models/schema/unit_dimension.py`:
 
 ```python
 """Domain model for a unit dimension (a measurable domain with a base unit)."""
@@ -222,16 +304,135 @@ class UnitDimension(BaseModel):
     id: UUIDv7
     name: str
     base_unit: str
-    deleted_at: str | None = None            # NULL = active; ISO-8601 = soft-deleted
+    deleted_at: str | None = None             # NULL = active; ISO-8601 = soft-deleted
     created_by_user_id: UUIDv7 | None = None  # NULL = single-user/legacy write
     updated_by_user_id: UUIDv7 | None = None
 ```
 
-Mirror `data-model.md` field lists exactly for `item` (§8), `inventory_event` (§11, LOG: `user_id`, `Money` fields, no update semantics), and the rest.
+### Worked example B — compound natural-key entity (`item`, §8)
 
-- [ ] Per entity: **failing test first** (construct with valid fields; assert each model-level invariant, e.g. non-v7 id rejected; Integer-typed value rejects a fraction; `ScaledValue.value_scaled` within int64). Implement. Add model validators only for **single-entity** invariants (cross-entity checks are service-layer). Group commits by domain package, one class per file.
+`item` has multiple optional natural-key fields (`sku`, `manufacturer_part_number`, `gpn`) whose uniqueness is **service-enforced**, not model-enforced. The model just types them.
 
-> Volume note: this is mechanical transcription from `data-model.md` plus per-field nullability justification and a few model validators. The worked example is the pattern for all ~60 models.
+```python
+"""Domain model for a catalog item — root of the item aggregate."""
+
+from pydantic import BaseModel, ConfigDict
+
+from thinghound.types import UUIDv7
+
+
+class Item(BaseModel):
+    """A catalog item (a part, not a physical instance). Identity is the UUIDv7;
+    SKU/MPN/GPN are optional natural keys whose uniqueness is enforced by the
+    service layer (cr-sqlite forbids secondary UNIQUE on CRR tables)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: UUIDv7
+    sku: str | None = None                       # NULL = no internal SKU assigned yet
+    manufacturer_id: UUIDv7 | None = None        # NULL = generic/unbranded
+    manufacturer_part_number: str | None = None  # NULL when manufacturer_id is NULL
+    gpn: str | None = None                       # generic part number; alternative to MPN
+    product_series_id: UUIDv7 | None = None      # NULL = not part of a series
+    primary_category_id: UUIDv7 | None = None    # NULL until categorised; required at service write
+    lifecycle_status_code: str = ""              # validated against REF lifecycle_status at service
+    description: str | None = None
+    deleted_at: str | None = None
+    created_by_user_id: UUIDv7 | None = None
+    updated_by_user_id: UUIDv7 | None = None
+```
+
+### Worked example C — LOG entity with `Money` (`inventory_event`, §11)
+
+LOG semantics: **insert-only**, no UPDATE attribution. Attribution is a single `user_id`, not the `created_by/updated_by` pair. The event carries a unit cost as `Money`.
+
+```python
+"""Domain model for an inventory event (LOG: append-only, single-writer)."""
+
+from pydantic import BaseModel, ConfigDict
+
+from thinghound.money import Money
+from thinghound.types import UUIDv7
+
+
+class InventoryEvent(BaseModel):
+    """A single append-only inventory event. Ordered by (effective_date, hlc, id).
+    Carries optional unit cost as Money (price_minor + currency); never a float."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: UUIDv7
+    item_id: UUIDv7
+    location_id: UUIDv7 | None = None         # NULL = unscoped / bulk
+    event_type_code: str                       # ADD/CONSUME/ADJUST/MOVE/INDIVIDUATE — REF
+    qty_scaled: int                            # scale 6 (fixed quantity scale)
+    qty_exact: str                             # exact decimal string at scale 6
+    unit_cost: Money | None = None             # NULL when event has no cost (CONSUME/MOVE)
+    effective_date: str                        # ISO-8601 (UTC); mapper encodes epoch
+    hlc: str                                   # hybrid logical clock token
+    reason: str | None = None                  # required by SERVICE for ADJUST
+    source_location_id: UUIDv7 | None = None   # required by SERVICE for MOVE
+    dest_location_id: UUIDv7 | None = None     # required by SERVICE for MOVE
+    user_id: UUIDv7 | None = None              # LOG attribution (single field)
+```
+
+### Worked example D — value-bearing aggregated child (`item_attribute_value`, §9)
+
+Carries a `ScaledValue` round-trip + a `provenance_code`. Scale is **per-attribute**, read from the owning `attribute_definition` at write time (not stored on the model).
+
+```python
+"""Domain model for a per-item attribute value (child of the Item aggregate)."""
+
+from pydantic import BaseModel, ConfigDict
+
+from thinghound.types import UUIDv7
+from thinghound.value.scaled_value import ScaledValue
+
+
+class ItemAttributeValue(BaseModel):
+    """One attribute value on one item. The scaled-int/exact-text pair is encoded
+    at the attribute_definition.scale by the service write path; the model
+    stores the already-encoded ScaledValue."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: UUIDv7
+    item_id: UUIDv7
+    attribute_definition_id: UUIDv7
+    value: ScaledValue | None = None      # NULL when attribute is text/enum (use value_text)
+    value_text: str | None = None         # NULL when attribute is numeric (use value)
+    provenance_code: str = ""             # M/D/T/I — manual/derived/template/imported (REF)
+    created_by_user_id: UUIDv7 | None = None
+    updated_by_user_id: UUIDv7 | None = None
+```
+
+The four worked examples above cover the four shapes that appear across the ~60 entities: simple, compound natural-key, LOG with `Money`, value-bearing with `ScaledValue`. Every sub-task below picks the matching shape.
+
+---
+
+### Sub-tasks (one per domain subpackage)
+
+Entity lists come **verbatim** from `data-model.md`. If a section adds/removes entities, the **data-model.md wins** — update the sub-task here and re-run the affected tests.
+
+- [ ] **Task 11a — `models/schema/`** (`data-model.md §4`): `UnitDimension`, `UnitMultiplier`, `PrefixSet`, `Prefix`, `AttributeCategory`, `AttributeDefinition`, `AttributeAllowedPrefix`, `AttributeEnumValue`, `AttributeComponent`. Shape: simple. Commit `feat(models): schema entities`.
+- [ ] **Task 11b — `models/category/`** (§5): `Category`, `CategoryAttribute`. Shape: simple + composite-PK junction (`CategoryAttribute(category_id, attribute_definition_id)` — model has both IDs, no synthetic `id`). Commit `feat(models): category entities`.
+- [ ] **Task 11c — `models/display/`** (§6): `DisplayProfile`, `DisplayColumn`, `CategoryColumnMapping`, `GridConfiguration`, `GridConfigurationColumn`, `GridConfigurationGrouping`. Shape: simple. Commit `feat(models): display & grid-config entities`.
+- [ ] **Task 11d — `models/identity/`** (§7): `Manufacturer`, `ProductSeries`, `SeriesAttributeDefault`. Shape: simple; `SeriesAttributeDefault.value` is `ScaledValue | None`. Commit `feat(models): identity entities`.
+- [ ] **Task 11e — `models/item/`** (§8): `Item` (use worked example B), `ItemCategory` (junction), `ItemRelationship`. Commit `feat(models): item entities`.
+- [ ] **Task 11f — `models/attrvalue/`** (§9): `ItemAttributeValue` (use worked example D), `ItemAttributeComponentValue` (same shape, component-keyed). Test specifically that `ScaledValue.value_scaled` fits in int64 and that mutating a constructed model raises. Commit `feat(models): attribute-value entities`.
+- [ ] **Task 11g — `models/instance/`** (§10): `ItemInstance`, `InstanceMeasurement` (measurement value is `ScaledValue`). Commit `feat(models): instance entities`.
+- [ ] **Task 11h — `models/event/`** (§11–§12 monetary): `InventoryEvent` (use worked example C), `Currency`, `FxRate` (rate is `str` — single exact-text field per `architecture.md §9`). Commit `feat(models): event, currency, FX entities`.
+- [ ] **Task 11i — `models/vendor/`** (§13): `Vendor`, `VendorOffer` (`unit_price: Money`), `PriceBreak` (`qty_min: ScaledValue` at quantity scale 6), `OfferHistory` (LOG; user_id). Commit `feat(models): vendor & pricing entities`.
+- [ ] **Task 11j — `models/project/`** (§14): `Project`. Commit `feat(models): project entity`.
+- [ ] **Task 11k — `models/invoice/`** (§14 cont.): `Invoice`, `InvoiceLine` (`qty: ScaledValue` at scale 6; `unit_price: Money | None`), `ImportTemplate` (carries a JSON template string — model stores as `str`, schema validation is a service concern). Commit `feat(models): invoice entities`.
+- [ ] **Task 11l — `models/bom/`** (§15): `Bom`, `BomRevision`, `BomLine` (`qty_per: ScaledValue` at scale 6), `BomLineSubstitute` (junction), `Build`. Commit `feat(models): BOM & build entities`.
+- [ ] **Task 11m — `models/misc/`** (§16): `Tag`, `ItemTag` (junction), `Formula`, `FormulaVersion`, `LtspiceTemplate`, `ExtractionJob`. Commit `feat(models): misc entities`.
+- [ ] **Task 11n — `models/admin/`** (§17–§19): `Attachment` (polymorphic owner — `owner_type_code: str` + `owner_id: UUIDv7 | None`), `AppSetting`, `DeviceSetting`, `User`, `Role`, `UserRole` (junction), `AuditLog` (LOG; `user_id`). Commit `feat(models): admin & RBAC entities`.
+- [ ] **Task 11o — `models/readmodel/`** (LOCAL read-model projections — distinct from write aggregates): `RmItemStock`, `RmStockByLocation`, `RmInstanceState`, `RmThumbnail`. These are **projection read models** (`architecture.md §4.4`), not write aggregates; they have no attribution columns and no soft-delete. Quantities use `ScaledValue` at scale 6. Commit `feat(models): LOCAL read-model projections`.
+
+- [ ] **Task 11-final — `CodeRow`** (`src/thinghound/models/code_row.py`): a tiny shared model `CodeRow(code: str, name: str, description: str | None = None)` used by every REF code table the registry loads. One failing test, implement, commit `feat(models): shared CodeRow`.
+
+> Verification at end of Task 11: `pytest -q tests/models/` is fully green; every entity in `data-model.md §3–§19` has exactly one model file and one test file; no model imports `sqlite3` (a quick `grep -rn "import sqlite3" src/thinghound/models/` returns nothing — models never know about rows).
 
 ---
 

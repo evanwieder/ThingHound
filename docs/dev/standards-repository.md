@@ -22,7 +22,7 @@ All SQL for an aggregate lives in its mapper as named class-level constants. No 
 class UnitDimensionMapper:
     """Aggregate mapper for unit_dimension and unit_multiplier tables."""
 
-    _GET_DIMENSION = """
+    _GET_BY_ID = """
         -- unit_dimension: fetch single row by primary key
         SELECT
             ud.id,
@@ -35,7 +35,7 @@ class UnitDimensionMapper:
         WHERE ud.id = ?
     """
 
-    _LIST_DIMENSIONS = """
+    _LIST_ACTIVE = """
         -- unit_dimension: list all non-deleted rows ordered by name
         SELECT
             ud.id,
@@ -49,7 +49,7 @@ class UnitDimensionMapper:
         ORDER BY ud.name
     """
 
-    _INSERT_DIMENSION = """
+    _INSERT = """
         -- unit_dimension: insert new row
         INSERT INTO unit_dimension (
             id, name, base_unit, deleted_at,
@@ -67,7 +67,7 @@ Row mapping belongs to the mapper, not to free module-level functions. Every `_r
 ```python
 class UnitDimensionMapper:
 
-    def _dimension_from_row(self, row: sqlite3.Row) -> UnitDimension:
+    def _from_row(self, row: sqlite3.Row) -> UnitDimension:
         return UnitDimension(
             id=row["id"],
             name=row["name"],
@@ -78,11 +78,34 @@ class UnitDimensionMapper:
         )
 
     def get(self, conn: sqlite3.Connection, id: uuid.UUID) -> UnitDimension | None:
-        row = conn.execute(self._GET_DIMENSION, (id.bytes,)).fetchone()
-        return self._dimension_from_row(row) if row else None
+        row = conn.execute(self._GET_BY_ID, (id.bytes,)).fetchone()
+        return self._from_row(row) if row else None
 ```
 
 Free module-level `_row_to_dimension()` functions are the antipattern this replaces.
+
+---
+
+## Converter Naming: Single-Entity vs. Compound Mappers
+
+The naming of the `*_from_row` / `*_to_row` converters depends on how many entity types the mapper maps:
+
+- A mapper that maps a **single entity type** names its converters **`_from_row` / `_to_row`**. The class name already identifies the type; an entity prefix would be noise.
+- A mapper that maps **several entity types** (a compound aggregate — e.g. `AttributeDefinitionMapper` mapping `attribute_definition`, `attribute_enum_value`, `attribute_component`, `attribute_allowed_prefix`) names one converter per type using the form **`_<entity>_from_row` / `_<entity>_to_row`** (e.g. `_definition_from_row`, `_enum_value_from_row`, `_component_from_row`, `_allowed_prefix_from_row`) to disambiguate.
+
+```python
+# Single-entity mapper — unprefixed converters
+class UnitDimensionMapper:
+    def _from_row(self, row: sqlite3.Row) -> UnitDimension: ...
+    def _to_row(self, dim: UnitDimension) -> tuple: ...
+
+# Compound mapper — one converter per owned type, each prefixed
+class AttributeDefinitionMapper:
+    def _definition_from_row(self, row): ...      # attribute_definition
+    def _enum_value_from_row(self, row): ...      # attribute_enum_value
+    def _component_from_row(self, row): ...       # attribute_component
+    def _allowed_prefix_from_row(self, row): ...  # attribute_allowed_prefix
+```
 
 ---
 
@@ -93,7 +116,7 @@ Mappers never call `commit()` or `rollback()`. Transaction scope is the session'
 ```python
 # Correct — mapper writes but does not commit
 def add(self, conn: sqlite3.Connection, dim: UnitDimension) -> None:
-    conn.execute(self._INSERT_DIMENSION, self._dimension_to_row(dim))
+    conn.execute(self._INSERT, self._to_row(dim))
 
 # Correct caller usage — session owns the transaction
 with session.transaction():
@@ -128,10 +151,10 @@ Every write operation has both a single-row form and a batch (`executemany`) for
 
 ```python
 def add(self, conn: sqlite3.Connection, dim: UnitDimension) -> None:
-    conn.execute(self._INSERT_DIMENSION, self._dimension_to_row(dim))
+    conn.execute(self._INSERT, self._to_row(dim))
 
 def add_batch(self, conn: sqlite3.Connection, dims: list[UnitDimension]) -> None:
-    conn.executemany(self._INSERT_DIMENSION, [self._dimension_to_row(d) for d in dims])
+    conn.executemany(self._INSERT, [self._to_row(d) for d in dims])
 ```
 
 Collections use `items.save()` → one batched statement in one transaction, not a per-item loop.

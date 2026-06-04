@@ -58,7 +58,7 @@ class UnitDimensionMapper:
 
     def get(self, conn: sqlite3.Connection, id: uuid.UUID) -> UnitDimension | None:
         row = conn.execute(self._GET_BY_ID, (id.bytes,)).fetchone()
-        return self._dimension_from_row(row) if row else None
+        return self._from_row(row) if row else None
 
 # Wrong — reconstructed on every call, no caching benefit, no traceability
 def get(self, conn, id):

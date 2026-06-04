@@ -72,7 +72,7 @@ def handle_set_value(self, item_id: str, attribute_id: str, raw: str) -> dict:
     ...
 
 # Wrong — defensive check inside internal function that trusts callers
-def _dimension_from_row(self, row: sqlite3.Row) -> UnitDimension:
+def _from_row(self, row: sqlite3.Row) -> UnitDimension:
     if row is None:                  # callers should not pass None
         return None                  # this masks a programming error
     return UnitDimension(id=row["id"], ...)
