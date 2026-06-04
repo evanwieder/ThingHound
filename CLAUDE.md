@@ -1,62 +1,54 @@
 # ThingHound — Agent Instructions
 
-These instructions apply to every agentic session in this repo and override default behavior.
+These instructions apply to every agentic session in this repository and override default behavior. For coding standards, see `coding_standards.md` (mandatory — read before writing any code).
 
-## Python coding standards
+---
 
-### Type annotations
-- Always annotate all function parameters, return types, and class attributes.
-- Never use `Optional[X]` — use `X | None` instead.
-- Never import `List`, `Dict`, or `Set` from `typing` — use the built-in `list`, `dict`, and `set`.
-- Avoid `Any` unless there is no other option; leave a comment explaining why when you do use it.
-- Use modern union syntax (`X | Y`) throughout; do not use `Union[X, Y]`.
+## Non-Negotiable Invariants
 
-### Docstrings
-- **Google-style docstrings are required** for every module, class, function, and method that can have one.
-- Module docstrings: one line summary at the top of every `.py` file.
-- Class docstrings: describe the class purpose and, where non-obvious, its invariants.
-- Function/method docstrings: summary line, then `Args:`, `Returns:`, `Raises:` sections as applicable. Omit a section only when it is genuinely empty (e.g., a `void` function with no notable raises).
+These are always active. No additional file load required.
 
-```python
-def encode_scaled(base: Fraction, scale: int) -> tuple[int, str]:
-    """Encode an exact rational value as a scaled integer and canonical decimal string.
+- **No floating-point anywhere.** Domain values are `Decimal`; money is `Money`. Physical encoding is DBMS-specific (see `thinghound-architecture.md` §9) but is never a float.
+- **`UUIDv7` for all ID fields in domain models.** Use `UUIDv7` from `thinghound.types`. Canonical string only at the bridge boundary (`str(id)`). Never `bytes`, `str`, or `uuid.UUID` in domain models.
+- **`foreign_keys = OFF`** on every SQLite connection.
+- **Scale per `attribute_definition`**, not per `unit_dimension`.
+- **All SQL lives in aggregate mappers.** No SQL in service, domain, UI, or test code.
+- **All SQL is parameterized.** No string interpolation of values.
+- **Logical model is DBMS-agnostic.** Physical constraints for SQLite CRR/LOG tables (DEFAULT on NOT NULL, no cross-column CHECK, etc.) are in `thinghound-architecture.md` §9 and `docs/dev/standards-sql.md`.
+- **Do not use `from __future__ import annotations`.** Python 3.14 evaluates annotations lazily by default (PEP 649).
 
-    Args:
-        base: The value in base units as an exact rational.
-        scale: Number of decimal places to keep (per-dimension constant).
+---
 
-    Returns:
-        A tuple of (value_scaled, value_exact) where value_scaled is the integer
-        representation and value_exact is the fixed-point decimal string.
+## Task-Routing Rules
 
-    Raises:
-        OverflowError: If value_scaled would exceed signed int64.
-    """
-```
+Before beginning work in each domain, read the relevant compact standards file:
 
-### File and class layout
-- **One class per file.** Exceptions require a strong justification (e.g., a small private helper dataclass that is only meaningful alongside its owning class, or a group of tightly coupled value types with no independent use). When in doubt, split.
-- This applies to Pydantic models too — each domain model gets its own file.
-- Name the file after the class in snake_case: `UnitDimension` → `unit_dimension.py`.
+| Task | Read before starting |
+|------|---------------------|
+| Writing or reviewing any Python code | `docs/dev/agent/standards-python.md` |
+| Writing or reviewing any SQL | `docs/dev/agent/standards-sql.md` |
+| Writing or reviewing any data model (Pydantic) | `docs/dev/agent/standards-data-models.md` |
+| Writing or reviewing any mapper or repository | `docs/dev/agent/standards-repository.md` AND `docs/dev/agent/standards-sql.md` |
+| Writing or reviewing any tests | `docs/dev/agent/standards-testing.md` |
+| Writing any error handling | `docs/dev/agent/standards-error-handling.md` |
 
-### General
-- Use `from __future__ import annotations` at the top of every file to enable forward references.
-- Prefer dataclasses (frozen) for value objects, Pydantic `BaseModel` (frozen config) for domain entities.
-- No bare `except:` or `except Exception:` swallowing — catch specific exceptions or re-raise.
-- No mutable default arguments.
+---
 
-## Project conventions
+## Project Context
 
-See `docs/dev/crr-rules.md` for CRR/sync table rules enforced by the CI guard.
+Specifications are in `docs/specs/`:
+- `thinghound-functional-spec.md` — requirements, definitions, business rules
+- `thinghound-data-model.md` — logical data model (all entities, sync classes, type vocabulary)
+- `thinghound-architecture.md` — stack, persistence layers, physical type mapping, sync design
 
-Key invariants (do not re-litigate):
-- No `REAL` anywhere — dimensional values use `value_scaled INTEGER` + `value_exact TEXT`.
-- UUIDs stored as `BLOB(16)` (UUIDv7); serialized to canonical `8-4-4-4-12` string only at service/bridge boundaries.
-- `foreign_keys=OFF` on every SQLite connection — referential integrity is application-enforced.
-- Money is integer minor-units (`Money` value object) — never float.
+cr-sqlite compatibility rules and empirical findings: `docs/dev/crsqlite-spike-findings.md`.
+
+---
 
 ## Workflow
 
-- All development on branches; merge to `main` only via user-approved PR.
-- Do not start coding unprompted; wait for explicit user instruction.
-- Do not push to remote without explicit user approval.
+- All development on branches. Merge to `main` only via user-approved PR.
+- Do not start coding unprompted. Wait for explicit instruction.
+- Do not push to remote without explicit user authorization.
+- Do not create PRs without explicit user authorization.
+- Table names are named for what a **single row** represents. Almost all table names are therefore singular (`item`, `category`, `inventory_event`). A table name is plural only when each row itself represents a collection — which is rare. When uncertain: if one row = one thing, the name is singular. Index name tokens follow the same rule.
