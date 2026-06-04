@@ -323,17 +323,19 @@ Shared pipeline: **Ingest → Match → Reconcile → Commit**
 
 The window is divided into three vertical panes plus a status bar. Data density is a first-class design value: compact row heights, small-but-legible type, and a high column count kept visible simultaneously without scrolling. Whitespace is used only where it aids scannability, not as decoration.
 
-**Left pane (narrow, fixed width):** A single hierarchical category tree with search and drag-reparent. Selecting a node filters the centre grid to that category and its descendants.
+**Pane sizing and minimisation.** All pane borders (sashes) are draggable — the user can resize any pane by dragging the divider between it and the centre grid. At startup each pane opens at a sensible default percentage of the window. The left pane, right pane, and filter strip can each be minimised independently: clicking a collapse button (or double-clicking the sash) collapses that pane to a thin bar at its respective edge — left edge for the left pane, right edge for the right pane, bottom edge for the filter strip. The thin bar contains a single button to restore the pane. The centre grid always occupies the remaining space and cannot be minimised.
 
-**Centre pane (dominant):** Two zones stacked vertically:
+**Global toolbar (top of window):** Application-level action bar with buttons for the primary create/edit/delete operations on the current context. Sits above all three panes; always visible.
+
+**Left pane:** A single hierarchical category tree with search and drag-reparent. Selecting a node filters the centre grid to that category and its descendants. Minimises to a thin bar at the left edge.
+
+**Centre pane (dominant, always visible):** Two zones stacked vertically:
 1. *Grid:* The primary work surface. Thumbnail image column (first, narrow) for items with a photo; then the user-configured Display Columns at compact row height. When the view is grouped by category, category-path section headers appear as collapsible rows within the grid itself — they are not a separate zone. Clicking a row populates the right inspector without navigating away. See §4.4.
-2. *Filter strip (bottom):* Persistent filter/search area below the grid. Contains the quick-search bar, parametric filter chips, and category/location scope controls. Always visible so filters are a one-click reach without entering a separate mode.
+2. *Filter strip (bottom):* Persistent filter/search area below the grid. Contains the quick-search bar, parametric filter chips, and scope controls. Minimises to a thin bar at the bottom edge of the centre pane.
 
-**Global toolbar (top of window):** Application-level action bar with buttons for the primary create/edit/delete operations on the current context. Sits above all three panes.
+**Right pane (inspector):** Displays full detail for the selected item without navigating away from the grid. Tabbed; see §4.3. Minimises to a thin bar at the right edge.
 
-**Right pane (inspector, always visible):** Displays full detail for the selected item without navigating away from the grid. Tabbed; see §4.3. Resizable but never fully hidden — the inspector is a peer to the grid, not a pop-up.
-
-**Status bar (bottom of window):** Row count for the current view, selection summary (items/qty selected), last sync time and status.
+**Status bar (bottom of window):** Row count for the current view, selection summary (items/qty selected), last sync time and status. Always visible; below the centre pane and right pane.
 
 ### 4.2 Add-Item Wizard
 
