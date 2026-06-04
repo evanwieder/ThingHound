@@ -20,8 +20,8 @@ All synced tables **must**:
 
 Recommended patterns:
 
-- **Soft deletes**: Add `deleted_at TEXT` column (NULL = not deleted, ISO 8601 timestamp = deleted).
-- **Attribution**: Add columns like `created_by TEXT`, `updated_by TEXT`, `updated_at TEXT` to track change history.
+- **Soft deletes**: Add `deleted_at INTEGER` column (NULL = not deleted, epoch-ms timestamp = deleted). Temporal columns are epoch integers, never `TEXT`; the mapper encodes ISO-8601 ↔ epoch (see `thinghound-architecture.md` §9).
+- **Attribution**: Add columns like `created_by_user_id BLOB`, `updated_by_user_id BLOB`, and `updated_at INTEGER` (epoch ms) to track change history. Temporal columns are epoch integers, never `TEXT`.
 
 ## Exempting Device-Local Tables
 
@@ -45,9 +45,9 @@ CREATE TABLE unit_dimension (
   id BLOB(16) PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   scale INTEGER NOT NULL,
-  created_at TEXT,
-  updated_at TEXT,
-  deleted_at TEXT
+  created_at INTEGER,
+  updated_at INTEGER,
+  deleted_at INTEGER
 );
 ```
 

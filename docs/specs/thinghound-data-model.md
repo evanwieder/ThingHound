@@ -25,7 +25,7 @@ Money is a `Money` value: an exact decimal amount paired with an ISO 4217 curren
 
 ### Timestamps and Ordering
 
-Timestamps are ISO-8601 `Timestamp`. The `HLC` (Hybrid Logical Clock) type is a causal timestamp carried on events and measurements to ensure deterministic ordering across devices with clock skew. Replay and costing order: `(effective_date, hlc, id)`.
+The logical `Timestamp` and `Date` types are points in time / calendar dates, represented as ISO-8601 in the domain model and across the bridge. Their **physical** storage is DBMS-specific and a mapper concern: on SQLite they are stored as **epoch integers** (epoch milliseconds, UTC — see `thinghound-architecture.md` §9), never as text; the mapper encodes/decodes at the storage boundary. The `HLC` (Hybrid Logical Clock) type is a causal timestamp carried on events and measurements to ensure deterministic ordering across devices with clock skew; it is stored as text, not an epoch integer. Replay and costing order: `(effective_date, hlc, id)`.
 
 ### Sync Classes
 
@@ -70,9 +70,9 @@ Uniqueness on natural keys (SKU, MPN, manufacturer name, attribute name within c
 | `Integer` | Exact whole number |
 | `Decimal` | Exact decimal (never float) |
 | `Boolean` | True / false |
-| `Timestamp` | ISO-8601 datetime |
-| `Date` | ISO-8601 date |
-| `HLC` | Hybrid Logical Clock value (causal timestamp) |
+| `Timestamp` | A point in time. ISO-8601 in the model and at the bridge; stored physically as an epoch integer on SQLite (mapper-encoded — see `thinghound-architecture.md` §9). |
+| `Date` | A calendar date. ISO-8601 in the model and at the bridge; stored physically as an epoch integer on SQLite (mapper-encoded). |
+| `HLC` | Hybrid Logical Clock value (causal timestamp); stored as text, not an epoch integer. |
 | `Money` | Exact decimal amount + ISO 4217 currency code |
 | `JSON` | Structured data — used only for genuinely free-form content |
 

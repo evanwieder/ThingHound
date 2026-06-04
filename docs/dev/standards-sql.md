@@ -346,6 +346,8 @@ CHECK ((value IS NULL) = (display_unit IS NULL))
 
 **No `REAL` columns.** Floating-point loses precision in the JSON changeset serialization used by cr-sqlite.
 
+**Temporal columns are `INTEGER` epoch values, never `TEXT`.** `Timestamp` and `Date` columns store an epoch integer (epoch milliseconds, UTC — see `thinghound-architecture.md` §9); the mapper encodes the model's ISO-8601 value to the epoch integer and decodes it back at the storage boundary. `HLC` remains `TEXT` (a causal-clock string, not a wall-clock datetime).
+
 **Schema changes to CRR/LOG tables use cr-sqlite's alter protocol:**
 ```sql
 SELECT crsql_begin_alter('table_name');
