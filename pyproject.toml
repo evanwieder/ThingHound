@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "thinghound"
+version = "0.1.0"
+description = "ThingHound foundation"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+  "pydantic>=2.7.0,<3",
+  "pint>=0.24,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2,<9",
+  "ruff>=0.5,<1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
