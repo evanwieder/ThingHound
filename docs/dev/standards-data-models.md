@@ -79,10 +79,14 @@ Every field is typed to its exact semantic meaning. Using a generic primitive wh
 
 No model field, no database column, no intermediate computation uses a float for any dimensional value, quantity, or monetary amount.
 
-- **Dimensional values:** `value_scaled: int` (base × 10^scale) + `value_exact: str` (canonical decimal)
-- **Money:** `amount_minor: int` + `currency: str`
-- **Scale:** defined per `attribute_definition`, not per `unit_dimension`
-- **Conversion path:** exact rationals (`Fraction`) → `Decimal` → `value_scaled` and `value_exact`. Pint's float default is bypassed.
+`Decimal` is exact everywhere, but its physical SQLite encoding depends on role (see `thinghound-architecture.md` §9, "Decimal encoding by role"):
+
+- **Attribute values:** dual-column `*_scaled INTEGER` + `*_exact TEXT`; `*_scaled` precision = the owning `attribute_definition.scale` (or `attribute_component.scale`).
+- **Quantities** (`qty_*`, `moq`, `order_multiple`, `reorder_*`, `safety_stock`): dual-column at a **fixed quantity scale of 6** (project constant).
+- **Factors and rates** (`unit_multiplier.factor`, `prefix.factor`, `fx_rate.rate`): **single `*_exact TEXT`** column, no `*_scaled` — a fixed scaled-int can't hold the SI prefix factor range in int64, and they're never range-searched.
+- **Money:** `amount_minor: int` + `currency: str`.
+- **Scale (attribute values):** defined per `attribute_definition`, not per `unit_dimension`.
+- **Conversion path:** exact rationals (`Fraction`) → `Decimal` → `value_scaled`/`value_exact`. Pint's float default is bypassed. The mapper owns this encoding.
 
 ---
 
@@ -148,6 +152,7 @@ Raw primitives do not cross domain boundaries. Wrap them.
 - IDs: `uuid.uuid7()` generates; Pydantic validates as `UUIDv7` at model construction; `id.bytes` at the storage boundary; `str(id)` at the bridge boundary
 - Money: `Money(amount_minor=150, currency="USD")` — never pass a raw integer as a monetary value
 - Scaled values: `ScaledValue(value_scaled=..., value_exact=..., scale=...)` — never pass a raw integer as a dimensional value without its scale and exact form
+- Timestamps / dates: the model carries an ISO-8601 string (`created_at`, `updated_at`, `deleted_at`, `effective_date`, …); the **mapper** encodes it to an **epoch integer** (epoch milliseconds, UTC) for SQLite storage and decodes it back at the storage boundary — never stored as `TEXT`. `HLC` is a causal-clock string, stored as text (not an epoch integer). See `thinghound-architecture.md` §9.
 
 ---
 

@@ -9,11 +9,13 @@ Every rule here exists in `docs/dev/standards-data-models.md`. Update both files
 3. `id` fields are `UUIDv7` (from `thinghound.types`). Never `bytes`, `str`, or plain `uuid.UUID` in a domain model. Mapper converts: `id.bytes` for storage writes; `uuid.UUID(bytes=row["id"])` passed to model constructor on reads; `str(id)` at the bridge boundary.
 4. Generate IDs with `uuid.uuid7()` (Python 3.14 stdlib). Pydantic validates as `UUIDv7` at construction.
 5. No floating-point anywhere. Dimensional values are `Decimal`; money is `Money`. Physical encoding is the mapper's responsibility.
+5a. `Decimal` SQLite encoding by role (architecture §9): attribute values → dual-column at `attribute_definition.scale`; quantities (`qty_*`/`moq`/`order_multiple`/`reorder_*`/`safety_stock`) → dual-column at fixed quantity scale 6; factors/rates (`unit_multiplier.factor`, `prefix.factor`, `fx_rate.rate`) → single `*_exact TEXT`, no `*_scaled`.
 6. `scale` is a property of `attribute_definition`, not `unit_dimension`. Never read scale from a dimension.
 7. Never add tolerance fields (`tol_low_scaled`, `tol_high_scaled`, etc.) to value rows. Tolerance is a separate attribute definition.
 8. Validation logic belongs in the model via `@field_validator` / `@model_validator`. Never duplicate validation in callers.
 9. Every nullable field (`X | None`) requires justification in a docstring.
 10. Never pass raw primitives at domain boundaries. Use `UUIDv7`, `Money`, `Decimal` wrappers.
+10a. Timestamps/dates: model carries an ISO-8601 string; the mapper encodes to an `INTEGER` epoch (epoch ms, UTC) for SQLite and decodes back — never stored as `TEXT`. `HLC` is a causal-clock string (text), not an epoch integer.
 11. CRR entities carry `created_by_user_id: UUID` and `updated_by_user_id: UUID`. LOG entities carry `user_id: UUID`. REF entities (code tables) carry no attribution.
 12. LOG entities are insert-only. No `update()` method on LOG mappers.
 13. Physical SQLite constraints for CRR/LOG tables (DEFAULT on NOT NULL, no cross-column CHECK) are in `thinghound-architecture.md` §9 and `docs/dev/standards-sql.md`. They are not logical model concerns.

@@ -1,0 +1,135 @@
+# ThingHound Phase 1 — Program Plan (Orchestration)
+
+> **For agentic workers:** This is the **master plan**. It contains no code. It defines the development tracks, their dependency gates, the parallelization model, the **persistence layering and responsibility boundaries** every unit must respect, and the per-unit Definition of Done. Execute the per-track plans it points to using superpowers:subagent-driven-development. Checkbox (`- [ ]`) steps are for tracking.
+
+**Authoritative sources (the only sources of truth).** This plan is derived from, and must not deviate from:
+- `docs/specs/thinghound-functional-spec.md` — requirements, business rules, bridge surface.
+- `docs/specs/thinghound-architecture.md` — stack, **persistence layers (§4)**, type mapping (§9), sync (§6).
+- `docs/specs/thinghound-data-model.md` — every entity, sync class, code tables.
+- `docs/dev/standards-*.md` (+ `docs/dev/agent/standards-*.md`) — Python, SQL, data-models, **aggregate-mapper**, testing, error-handling standards.
+- `docs/dev/crsqlite-spike-findings.md`, `docs/dev/crr-rules.md` — cr-sqlite constraints.
+
+Where this plan and a doc above disagree, the doc wins; fix the plan.
+
+**Goal:** Stand up ThingHound Phase 1 (core catalog + inventory + a working heterogeneous grid) on a clean, sync-ready, CRR-correct data layer — built data-models-first, then by parallel basic agents in testable units with explicit review and testing, with the UI on a parallel track gated by a main-page demo.
+
+**Architecture (one paragraph):** Local-first SQLite + cr-sqlite + FTS5. No ORM; hand-written parameterized SQL. Exact numeric storage — no float anywhere. Frozen Pydantic models. PyWebView + Tabulator UI over a JS bridge. Detail lives in the specs above.
+
+**Tech stack:** Python 3.14, Pydantic v2, Pint, `sqlite3` stdlib, cr-sqlite v0.16.3, FTS5, Jinja2, simpleeval, PyWebView, Tabulator, pytest, Ruff, PyInstaller.
+
+---
+
+## 1. Persistence Layering & Responsibility Boundaries (READ FIRST)
+
+Every Track-2 unit and the Track-1 session/registry depend on getting this exactly right. It restates `architecture.md §4` and `docs/dev/standards-repository.md`. **There is no "repository" class. ThingHound uses aggregate mappers.**
+
+| Layer | Owns | **Must NOT do** |
+|-------|------|-----------------|
+| **Models** (`models/`) | Frozen Pydantic entities / frozen-dataclass value objects: structure, field validation, and value-level conversion of their own fields (e.g. `ScaledValue` encode/decode, `Money`). | Know SQL, connections, I/O, or that a database exists. |
+| **Aggregate mapper** (`mappers/`) | The **single source of truth** for persisting one aggregate: all column lists, table names/aliases, all SELECT/INSERT/UPDATE/DELETE SQL (single **and** batch), **and all row↔model conversion** — `id.bytes`↔`uuid.UUID(bytes=…)`, scaled-int↔model, **timestamp epoch-int↔ISO-8601**, etc. — as private methods (`_dimension_from_row`). The only layer that knows **both** the physical schema and the domain model. The dialect seam. | Call `commit()`/`rollback()`. Know other aggregates' internals, the UI, or services. Be bound mechanically to one table (it may own several). |
+| **Domain objects** | A model + a session handle; `write()`/`reload()`/`delete()` **delegate to the aggregate's mapper**. | Contain SQL text or convert rows. Hold the physical schema. |
+| **Collections** | Batch-first containers; `items.save()` = one batched statement in one transaction. | Per-row loops. SQL text. Conversion. |
+| **Query / projection objects** | Compose fully-parameterized read queries from mapper column metadata; return purpose-built **read models** (projections), distinct from write aggregates. | Know how aggregates are written. Inline values into SQL. |
+| **Session / Unit of Work** (what one might loosely call a "repository") | The connection, the transaction scope (`BEGIN`/`COMMIT`/`ROLLBACK`), and the identity map. Exposes mappers/collections/query entry points. | **Know any table SQL. Convert any row to or from any model or value object.** It coordinates; it never maps. |
+| **AppRegistry** | Structure/config (dimensions, prefixes, attribute defs, category tree, grid configs) loaded once at startup **through the same mappers** and held in memory. | Issue ad-hoc per-row SQL at runtime; be a general cache. |
+| **Services** | Use-case orchestration, the acting-user context, and invariants the schema cannot enforce under cr-sqlite (natural-key uniqueness, cross-column coupling). Call mappers within a session transaction. | Contain SQL or row↔model conversion. |
+
+**The conversion rule, stated plainly (this is the rule that was being violated):** row↔model and value↔column conversion happen in **exactly one place — the aggregate mapper** (using the model's own value-conversion methods). The session/unit-of-work, domain objects, collections, query objects, and services **never** convert a row to or from a Pydantic model or value-object dataclass. (`standards-repository.md`: *"Row mapping belongs to the mapper… a private method on the mapper class. Free module-level `_row_to_*` functions are the antipattern this replaces."* `architecture.md §4.6`: the session *"knows no table SQL."*)
+
+---
+
+## 2. The Two Locked Decisions
+
+1. **Foundation breadth = full logical schema.** Track 1 produces Pydantic models + migrations + REF code-table seeds for **all** entities in `data-model.md` (Phases 1–4), so the schema is sync-ready from day one. Mappers, services, and UI are built for **Phase 1 functionality only** (`functional-spec.md §7.1`).
+2. **Build sequencing = vertical slice to demo, then fan out.** After the foundation lands, build the minimum mapper→service→query chain that drives a real grid (schema registry → item → attribute values → inventory events → grid query), prove it against the UI demo, **then** dispatch remaining Phase-1 units in parallel.
+
+---
+
+## 3. Tracks & Dependency Graph
+
+```
+TRACK 1 — Foundation & Data Models  (sequential prerequisite; one careful worker)
+  scaffold · types · units/value engine · ALL Pydantic models
+  · migrations (full schema + REF seeds) · CRR CI guard · connection · Session (UoW) · AppRegistry skeleton
+        │  GATE A: foundation green (all tests pass, CRR guard passes, migrations apply clean)
+        ▼
+TRACK 2 — Persistence & Service Units
+  Phase 1a (vertical slice; each unwraps the next):
+     U1 schema-registry → U2 category → U3 item → U4 attribute-values → U5 inventory-events → U6 grid-query
+        │  GATE B: vertical slice green + wired into the UI demo (cross-track)
+        ▼
+  Phase 1b (parallel fan-out — many basic agents at once):
+     vendors/offers/pricing · fx/currency/costing · locations · instances/individuation · projects
+     · tags/FTS · attachments · manufacturer/series · BOM/build basics · invoices · procurement · settings · onboarding
+        │  GATE C: Phase 1 feature-complete, all units reviewed + green
+        ▼
+      Phase 1 integration / packaging (PyInstaller)
+
+TRACK 3 — UI Framework  (parallel from day one; depends only on the bridge CONTRACT, not real data)
+  scaffold PyWebView shell + bridge stub · frontend scaffold (Tabulator, 3-pane layout)
+  · MAIN-PAGE DEMO with dummy data   ◄── TOUCHSTONE DELIVERABLE
+        │  GATE D (touchstone): user reviews demo → approves or revises before ANY further UI work
+        ▼
+  Post-gate UI units · integrates with Track 2 at GATE B (swap dummy bridge for real grid.queryItems)
+```
+
+Track 1 blocks Track 2. Track 3 runs alongside Track 1 (it codes against the `functional-spec.md §6` bridge contract, not a live database). Tracks 2 and 3 meet at **Gate B**.
+
+| Track | Plan document |
+|-------|---------------|
+| 1 — Foundation & Data Models | `2026-06-04-track1-foundation-data-models.md` |
+| 2 — Persistence & Service Units | `2026-06-04-track2-persistence-service-units.md` |
+| 3 — UI Framework | `2026-06-04-track3-ui-framework.md` |
+
+---
+
+## 4. The Parallelization & Agent Model
+
+**One fresh subagent per unit.** Each Track-2 unit (and post-gate Track-3 unit) is sized for a basic (Haiku-class) agent working against: the unit's spec (tables it writes, models, behaviors, tests, bridge methods), the **worked canonical example** (Track 2 §3), and the compact standards files (`docs/dev/agent/standards-*.md`, loaded per CLAUDE.md task-routing).
+
+Why basic agents suffice: the foundation locks every hard decision (types, encoding, schema, CRR rules, layering). Each unit is then a pattern-following application of the aggregate-mapper standard; only the table/field specifics change, and those come verbatim from `data-model.md`.
+
+Use **superpowers:dispatching-parallel-agents** for the Phase-1b fan-out. The **single-writer-per-table** invariant guarantees parallel units never write the same table; reads may cross freely.
+
+---
+
+## 5. Definition of Done (every unit, every track)
+
+- [ ] **TDD followed** — failing test first for every behavior (`standards-testing.md`). Untested = not implemented.
+- [ ] **Real database in integration tests** — in-memory SQLite + migrations; no mocked connections.
+- [ ] **Layering respected** — SQL and row↔model conversion live **only** in the aggregate mapper; the session/UoW, services, domain objects, collections, and query objects perform **no conversion** (see §1).
+- [ ] **All SQL parameterized**, column-explicit, fully-qualified joins, traceability comments (`standards-sql.md`).
+- [ ] **No floating-point** anywhere; `Decimal`/`Money`/scaled-int only.
+- [ ] **`UUIDv7`** for all domain IDs; canonical string only at the bridge.
+- [ ] **Frozen Pydantic** models, one class per file, precise field types (`standards-data-models.md`).
+- [ ] **CRR guard passes** on any new/changed migration (`scripts/check_crr_rules.py`); Ruff clean; full pytest suite green.
+- [ ] **Two-stage code review passed** (§6).
+
+---
+
+## 6. Review & Test Discipline
+
+Each unit passes a **two-stage review** before acceptance:
+1. **Self-verification** (superpowers:verification-before-completion) — run the suite + Ruff + CRR guard; paste real green output. No "should pass."
+2. **Independent code review** (superpowers:requesting-code-review) against the unit spec and the Definition of Done; findings handled via superpowers:receiving-code-review (verify before implementing; push back on wrong feedback).
+
+The orchestrator reviews **between** units. A unit failing review is bounced to a fresh agent with the findings; it does not merge.
+
+---
+
+## 7. The Touchstone Gate (Gate D)
+
+Track 3's first deliverable is the **main-page rendered from dummy data** — the full three-pane layout, a heterogeneous Tabulator grid with dynamic Display Columns and a hero column, the category tree, the inspector, and the filter strip (`functional-spec.md §4.1–4.5`), using fixtures, not the database. **No further UI units begin until the user reviews and approves it.**
+
+---
+
+## 8. Sequencing Summary (gates)
+
+- [ ] **Gate A** — Track 1 complete: full schema migrates clean, CRR guard green, models + engine + session tested. *Unblocks Track 2.*
+- [ ] **Gate D** — Track 3 main-page demo approved by user. *Unblocks remaining UI units.* (Independent of Gate A.)
+- [ ] **Gate B** — Track 2 vertical slice (U1–U6) green and wired into the demo (dummy data → real `grid.*`). *Unblocks Phase-1b fan-out.*
+- [ ] **Gate C** — All Phase-1b units reviewed + green. *Unblocks integration + packaging.*
+
+Tracks 1 and 3 start together; Track 2 starts at Gate A; first end-to-end milestone is Gate B.
+
+> All work on branches; merge to `main` only via user-approved PR. **Do not start coding, commit, push, or open PRs without explicit user authorization** (CLAUDE.md; project memory).

@@ -14,6 +14,7 @@ These are always active. No additional file load required.
 - **Scale per `attribute_definition`**, not per `unit_dimension`.
 - **All SQL lives in aggregate mappers.** No SQL in service, domain, UI, or test code.
 - **All SQL is parameterized.** No string interpolation of values.
+- **Timestamps/dates are stored as epoch integers on SQLite** (epoch milliseconds, UTC), encoded/decoded by the mapper — never `TEXT`. `HLC` stays `TEXT` (causal-clock string). See `thinghound-architecture.md` §9.
 - **Logical model is DBMS-agnostic.** Physical constraints for SQLite CRR/LOG tables (DEFAULT on NOT NULL, no cross-column CHECK, etc.) are in `thinghound-architecture.md` §9 and `docs/dev/standards-sql.md`.
 - **Do not use `from __future__ import annotations`.** Python 3.14 evaluates annotations lazily by default (PEP 649).
 

@@ -245,14 +245,26 @@ The logical data model (`thinghound-data-model.md`) uses database-agnostic types
 | `UUID` | `BLOB(16)` — raw bytes via `id.bytes` / `uuid.UUID(bytes=...)` | `UUID` — native | Bridge: `str(id)` / `uuid.UUID(str)` |
 | `String` | `TEXT` | `TEXT` / `VARCHAR` | |
 | `Integer` | `INTEGER` | `INTEGER` / `BIGINT` | |
-| `Decimal` (base units) | Two columns: `*_scaled INTEGER` (base × 10^scale, indexed for sort/range) + `*_exact TEXT` (canonical decimal, source of truth for math/display) | Single `NUMERIC` column | SQLite has no exact decimal type; the dual-column encoding is a mapper implementation detail. `scale` on `attribute_definition` drives the `*_scaled` precision. |
+| `Decimal` | Role-dependent — see **Decimal encoding by role** below | Single `NUMERIC` column | SQLite has no exact decimal type. `*_exact TEXT` is always the source of truth for math/display; `*_scaled INTEGER` (when present) backs indexing/sort/range. |
 | `Boolean` | `INTEGER` — 0 / 1 | `BOOLEAN` | |
-| `Timestamp` | `TEXT` — ISO-8601 | `TIMESTAMPTZ` | |
-| `Date` | `TEXT` — ISO-8601 | `DATE` | |
-| `HLC` | `TEXT` | `TEXT` | Causal clock; comparable as string |
+| `Timestamp` | `INTEGER` — epoch milliseconds (UTC) | `TIMESTAMPTZ` | Stored as an integer, never `TEXT`. The mapper encodes the model's ISO-8601 timestamp to epoch ms and decodes it back at the storage boundary. |
+| `Date` | `INTEGER` — epoch milliseconds at UTC midnight | `DATE` | Stored as an integer, never `TEXT`. Mapper-encoded at the storage boundary. |
+| `HLC` | `TEXT` | `TEXT` | Causal clock, not a wall-clock datetime; stays `TEXT`, compared as string. |
 | `Money` | Two columns: `*_minor INTEGER` (amount in currency's minor units) + `*_currency TEXT(3)` (ISO 4217) | `NUMERIC` + `TEXT(3)` | SQLite has no money type; the dual-column encoding is a mapper implementation detail. |
 | `Enum(…)` | `TEXT` with single-column `CHECK` | `TEXT` / `ENUM` | |
 | `JSON` | `TEXT` | `JSONB` | Only for genuinely free-form content |
+
+### Decimal encoding by role
+
+`Decimal` is exact everywhere (never `REAL`), but its SQLite encoding depends on the value's role. There are three:
+
+1. **Attribute values** — `item_attribute_value.value`, `item_attribute_component_value.value`, `instance_measurement.value`, `series_attribute_default.value`, `datasheet_extraction.value`. **Dual-column** `*_scaled INTEGER` + `*_exact TEXT`; `*_scaled` precision is the owning `attribute_definition.scale` (or `attribute_component.scale`). Indexed for parametric search and sort.
+
+2. **Quantities** — `inventory_event.qty_change`, `item_instance.qty_initial`, `bom_line.qty_per`, `build.qty_built`, `price_break.qty_min`/`qty_max`, `vendor_offer.moq`/`order_multiple`/`qty_available`, `offer_history.qty_available`, `invoice_line.qty`, `item.reorder_point`/`reorder_qty`/`safety_stock`, and the LOCAL read-model `qty_*` columns. **Dual-column** `*_scaled INTEGER` + `*_exact TEXT` at a **fixed quantity scale of 6** (10⁻⁶ precision; max |qty| ≈ 9.2×10¹² in signed int64). The stock read-model aggregates and the costing/BOM logic operate on `*_scaled`.
+
+3. **Factors and rates** — `unit_multiplier.factor`, `prefix.factor`, `fx_rate.rate`. **Single `*_exact TEXT`** canonical-decimal column; **no `*_scaled`.** These are resolved by key (unit symbol; currency + date), never range-searched, and a fixed scaled-int cannot hold the SI prefix factor range within signed int64 (e.g. quetta 10³⁰ vs quecto 10⁻³⁰ have no common scale that fits). The model field stays `Decimal`; the mapper parses the text to `Decimal`/`Fraction`.
+
+> The fixed quantity scale (6) is a project constant defined in code (e.g. `value/quantity.py`), not per row.
 
 ### SQLite-Specific Physical Constraints
 
@@ -262,6 +274,7 @@ When authoring SQLite DDL for CRR and LOG tables the mapper must follow cr-sqlit
 - No cross-column `CHECK` constraints. Column changesets apply independently; a cross-column check may fire on a partial changeset and reject a valid remote write. Enforce such invariants at the application layer.
 - Single-column `CHECK` constraints are acceptable if conservative.
 - No `AUTOINCREMENT`. No `REAL` columns.
+- Temporal columns (`Timestamp`, `Date`) are stored as `INTEGER` epoch values (epoch milliseconds, UTC — see §9), never `TEXT`. The mapper encodes/decodes at the storage boundary. `HLC` remains `TEXT`.
 - Schema changes to CRR/LOG tables use `crsql_begin_alter` / `crsql_commit_alter`.
 - The CI guard (`scripts/check_crr_rules.py`) enforces these rules on every migration file before merge.
 
