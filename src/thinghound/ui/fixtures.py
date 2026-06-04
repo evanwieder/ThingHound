@@ -1,6 +1,5 @@
 """Mock bridge fixtures shaped for the UI contract."""
 
-from __future__ import annotations
 
 from typing import Any
 

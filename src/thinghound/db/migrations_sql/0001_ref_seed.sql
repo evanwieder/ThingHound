@@ -1,3 +1,0 @@
--- 0001_ref_seed.sql
--- REF code tables (data-model.md §3) — NOT YET IMPLEMENTED.
--- See Track 1 Task 9 for the full 26-table spec.
