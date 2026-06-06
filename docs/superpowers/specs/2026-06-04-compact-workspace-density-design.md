@@ -20,6 +20,7 @@ This is explicitly a **first pass for a demo**, not a final visual system. The g
 4. Retain grouped rows in the grid, but reduce the contrast between group headers and data rows.
 5. Support both light mode and dark mode while keeping density identical in each theme.
 6. Preserve the current interaction model: grid selection drives the inspector.
+7. Separate global actions from pane-local actions with a clear toolbar structure.
 
 ---
 
@@ -69,6 +70,13 @@ This is explicitly a **first pass for a demo**, not a final visual system. The g
 - The UI also includes a **visible theme toggle** so the user can switch modes manually after startup.
 - Light and dark themes share the same spacing, sizing, and layout rules; only tokens/palette differ.
 
+### Toolbar model
+
+- The main window toolbar is reserved for **global actions** that apply across the workspace.
+- Each pane gets its own **small local toolbar at the top** for actions specific to that pane.
+- Pane-local toolbars use the same compact visual language as the rest of the demo.
+- The split between global and local actions should be obvious from placement, not only from icon or label wording.
+
 ---
 
 ## Visual direction
@@ -87,14 +95,28 @@ The center grid should feel tight and information-rich. The tree and inspector s
 
 ## Component design
 
-### Toolbar
+### Main window toolbar
 
-- Add a compact theme toggle to the existing top bar.
+- Keep the top toolbar for **global actions only**.
+- Add the theme toggle here.
+- Global toolbar actions may include things like saving and loading grid views, workspace setups, or other app-wide state.
 - Keep toolbar visuals secondary to the workspace below.
 - Toolbar controls remain usable, but should not establish the primary density scale for repeated data.
 
+### Pane-local toolbars
+
+- Each pane gets a small toolbar at its top edge.
+- These toolbars are for **pane-specific actions only**.
+- They should be compact, low-noise, and visually integrated with the pane they control.
+- They provide the action boundary for the three workspace regions:
+  - tree pane actions stay with the tree
+  - grid pane actions stay with the grid
+  - inspector actions stay with the inspector
+
 ### Left tree
 
+- Add a compact pane-local toolbar above the tree content.
+- Expected actions include collapse-all, expand-all, search, and tree-edit actions when that editing surface exists.
 - Reduce row height and indentation spacing.
 - Use the shared compact data font size.
 - Keep expand/collapse affordances, but tighten icon spacing.
@@ -102,6 +124,8 @@ The center grid should feel tight and information-rich. The tree and inspector s
 
 ### Center grid
 
+- Add a compact pane-local toolbar above the grid.
+- Expected actions include configuring display columns, selecting a grid configuration from a dropdown, editing grid configurations, and other grid-specific controls.
 - Add a tracked source stylesheet that intentionally overrides Tabulator defaults.
 - Reduce header height, row height, cell padding, and column-header spacing aggressively.
 - Keep header text equal in size to cell text, but bold.
@@ -119,6 +143,8 @@ The center grid should feel tight and information-rich. The tree and inspector s
 
 ### Right inspector
 
+- Add a compact pane-local toolbar above the inspector content.
+- Expected actions include editing the current item, adjusting inventory, and other selection-specific inspector actions.
 - Keep the selected-item title/subtitle area larger and more prominent than the repeated data rows.
 - Use the shared compact data font size for labels and values below that header.
 - Tighten key/value row spacing while preserving alignment.
@@ -140,18 +166,20 @@ The implementation should focus on:
 
 1. establishing a tracked source stylesheet at `ui/styles.css`
 2. wiring the build so the source stylesheet is copied into `ui/dist/`
-3. adding compact workspace theme tokens and dense component rules
-4. overriding Tabulator spacing and group-header presentation intentionally
-5. adding theme-toggle behavior without changing the current data flow
+3. introducing a clear global-toolbar vs pane-toolbar layout
+4. adding compact workspace theme tokens and dense component rules
+5. overriding Tabulator spacing and group-header presentation intentionally
+6. adding theme-toggle behavior without changing the current data flow
 
 ---
 
 ## Expected code impact
 
 - `ui/styles.css` (new): source of truth for workspace theme tokens, dense sizing, Tabulator overrides, tree/filter/inspector styling
+- `ui/src/layout.js`: pane sizing and collapse behavior kept compatible with the new toolbar structure
 - `ui/src/grid.js`: compact column behavior, blank thumbnail header, and any Tabulator configuration required to support the dense presentation
-- `ui/index.html`: toolbar markup for the theme-toggle affordance
-- `ui/src/main.js` and/or related UI modules: theme initialization and toggle wiring
+- `ui/index.html`: main toolbar markup and pane-toolbar markup
+- `ui/src/main.js`: theme initialization and toggle wiring
 - `package.json`: build step updated so `ui/styles.css` is copied into `ui/dist/`
 
 Generated output under `ui/dist/` should be treated as build artifacts, not as the design source of truth.
@@ -170,7 +198,9 @@ Generated output under `ui/dist/` should be treated as build artifacts, not as t
 8. Both light and dark themes render correctly.
 9. Initial theme follows the system preference.
 10. A visible UI toggle allows switching themes manually.
-11. Pane resizing/collapse continues to work after the restyle.
+11. The main window toolbar contains global actions only.
+12. Each pane has a compact local toolbar for pane-specific actions.
+13. Pane resizing/collapse continues to work after the restyle.
 
 ---
 
