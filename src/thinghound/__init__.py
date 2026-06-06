@@ -1,6 +1,3 @@
-"""ThingHound package."""
+"""ThingHound — local-first component catalog and inventory management application."""
 
-from thinghound.money import Money
-from thinghound.types import UUIDv7, new_id
-
-__all__ = ["Money", "UUIDv7", "new_id"]
+__version__ = "0.1.0"
