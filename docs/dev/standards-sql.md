@@ -2,7 +2,7 @@
 
 **Compact agent version:** `docs/dev/agent/standards-sql.md`
 
-SQL in ThingHound is hand-written and lives exclusively in aggregate mappers. Standards are divided into two sections: **Global** (apply regardless of the target DBMS) and **SQLite-Specific** (apply only to the current SQLite + cr-sqlite backend). When a future Postgres mapper is written, global standards apply; SQLite-specific standards do not.
+SQL in ThingHound is built by the model-aware query component from mapper-provided metadata; callers express intent only. No SQL is hand-written in service, domain, or UI code, and there are no hand-written named SQL constants. Standards are divided into two sections: **Global** (apply regardless of the target DBMS) and **SQLite-Specific** (apply only to the current libSQL/SQLite backend). When a future Postgres mapper is written, global standards apply; SQLite-specific standards do not.
 
 ---
 
@@ -22,50 +22,26 @@ Table names are named for what **a single row** represents.
 
 Almost all table names are therefore singular. A table name is plural only when each row itself represents a **collection** of objects — for example, a table where each row stores an aggregated set or a bundle as its primary content. This is rare. When uncertain: if one row = one thing, the name is singular.
 
-Index name tokens follow the same rule: `idx_item_deleted_at`, never `idx_items_deleted_at`.
+Index name tokens follow the same rule: `idx_item_deleted_ts`, never `idx_items_deleted_ts`.
 
-This convention applies to all table identifiers in migrations, SQL constants, mappers, specs, and documentation. English prose and column names are exempt; only table identifiers are governed by this rule.
+This convention applies to all table identifiers in migrations, SQL, mappers, specs, and documentation. English prose and column names are exempt; only table identifiers are governed by this rule.
 
 ---
 
 ## Where SQL Lives
 
-All SQL lives in **aggregate mappers**. No SQL string appears in service classes, domain objects, collections, query/specification objects, tests, or any other location. The mapper is the only place that knows both the physical schema and the domain model. Consumers see only domain models.
+No SQL string appears in service classes, domain objects, collections, tests, or any other location. SQL is built by the **model-aware query component** from the mapper's column and relationship metadata. The mapper is the only place that knows both the physical schema and the domain model; consumers see only domain models and express query *intent* — never SQL.
 
 ---
 
-## SQL as Named Constants — Prepared Once, Executed Many Times
+## SQL Is Built, Not Hand-Written
 
-Every SQL statement is a named class-level or module-level constant. SQL is never constructed inline inside a method body. Constants are defined once and reused on every call — the driver compiles and caches the parameterized statement; repeated execution with different parameters avoids re-parsing overhead.
+There are no hand-written named SQL constants. The caller declares what it needs (entity, projection, predicate, ordering) and the query component assembles the statement, choosing construction and strategy per use case. Joins derive from the model's declared relationships. Two rules are absolute regardless of how a statement is assembled:
 
-For high-frequency queries, DBMS drivers that support explicit prepared statements (e.g., psycopg3's `conn.prepare()`) should be used to prepare the statement once at mapper initialization and execute it repeatedly. SQLite's `sqlite3` module handles caching internally when a parameterized constant is reused.
+- **Every value is a bound parameter.** Never interpolate a value into SQL text.
+- **Identifiers come only from metadata.** Table and column names originate from the mapper's metadata, never from caller input.
 
-```python
-# Correct — constant defined once, reused on every call
-class UnitDimensionMapper:
-    _GET_BY_ID = """
-        -- unit_dimension: fetch single row by primary key
-        SELECT
-            ud.id,
-            ud.name,
-            ud.base_unit,
-            ud.deleted_at,
-            ud.created_by_user_id,
-            ud.updated_by_user_id
-        FROM unit_dimension AS ud
-        WHERE ud.id = ?
-    """
-
-    def get(self, conn: sqlite3.Connection, id: uuid.UUID) -> UnitDimension | None:
-        row = conn.execute(self._GET_BY_ID, (id.bytes,)).fetchone()
-        return self._from_row(row) if row else None
-
-# Wrong — reconstructed on every call, no caching benefit, no traceability
-def get(self, conn, id):
-    row = conn.execute(
-        "SELECT * FROM unit_dimension WHERE id = ?", (id,)
-    ).fetchone()
-```
+The rules in the rest of this document describe the **shape of the SQL the component emits** (and the shape any SQL reviewed in tests or logs must have). The snippets below are illustrations of that emitted shape, not literal constants to author by hand.
 
 ---
 
@@ -81,7 +57,7 @@ SELECT
     ud.id,
     ud.name,
     ud.base_unit,
-    ud.deleted_at
+    ud.deleted_ts
 FROM unit_dimension AS ud
 WHERE ud.id = ?
 
@@ -108,20 +84,20 @@ Full syntax communicates intent unambiguously. Abbreviated forms are not permitt
 ```sql
 -- Correct
 SELECT
-    iav.item_id,
+    iav.item_uuid,
     iav.attribute_id,
     iav.value,
     ad.name AS attribute_name
 FROM item_attribute_value AS iav
-INNER JOIN attribute_definition AS ad
+INNER JOIN attribute AS ad
     ON ad.id = iav.attribute_id
 LEFT OUTER JOIN unit_dimension AS ud
     ON ud.id = ad.unit_dimension_id
-WHERE iav.item_id = ?
+WHERE iav.item_uuid = ?
 
 -- Wrong — abbreviated join types
 FROM item_attribute_value iav
-JOIN attribute_definition ad ON ad.id = iav.attribute_id
+JOIN attribute ad ON ad.id = iav.attribute_id
 LEFT JOIN unit_dimension ud ON ud.id = ad.unit_dimension_id
 ```
 
@@ -135,14 +111,14 @@ Each `ON` condition appears on its own line, indented under its `JOIN`. When a j
 -- Correct
 FROM item AS i
 INNER JOIN item_attribute_value AS iav
-    ON iav.item_id = i.id
-INNER JOIN attribute_definition AS ad
+    ON iav.item_uuid = i.uuid
+INNER JOIN attribute AS ad
     ON ad.id = iav.attribute_id
-   AND ad.deleted_at IS NULL
+   AND ad.deleted_ts IS NULL
 
 -- Wrong — ON clause on same line as JOIN
 FROM item i
-INNER JOIN item_attribute_value iav ON iav.item_id = i.id
+INNER JOIN item_attribute_value iav ON iav.item_uuid = i.uuid
 ```
 
 ---
@@ -157,13 +133,13 @@ SELECT
     ud.id,
     ud.name
 FROM unit_dimension AS ud
-WHERE ud.deleted_at IS NULL
+WHERE ud.deleted_ts IS NULL
 
 -- Wrong — no alias, no qualification
-SELECT id, name FROM unit_dimension WHERE deleted_at IS NULL
+SELECT id, name FROM unit_dimension WHERE deleted_ts IS NULL
 ```
 
-Establish a consistent alias vocabulary: `ud` = `unit_dimension`, `iav` = `item_attribute_value`, `ad` = `attribute_definition`, `i` = `item`, `ic` = `item_category`, `ie` = `inventory_event`, etc.
+Establish a consistent alias vocabulary: `ud` = `unit_dimension`, `iav` = `item_attribute_value`, `ad` = `attribute`, `i` = `item`, `ic` = `item_category`, `ie` = `inventory_event`, etc.
 
 ---
 
@@ -191,23 +167,17 @@ FROM ancestors AS a
 
 ## Leading Traceability Comment
 
-Every SQL constant begins with a single-line comment naming the primary table and describing the operation.
+Every emitted statement begins with a single-line comment naming the primary table and describing the operation.
 
-```python
-_GET_BY_ID = """
-    -- unit_dimension: fetch by primary key
-    SELECT ud.id, ud.name ...
-"""
+```sql
+-- unit_dimension: fetch by primary key
+SELECT ud.id, ud.name ...
 
-_LIST_ACTIVE = """
-    -- unit_dimension: list non-deleted, ordered by name
-    SELECT ud.id, ud.name ...
-"""
+-- unit_dimension: list non-deleted, ordered by name
+SELECT ud.id, ud.name ...
 
-_INSERT = """
-    -- unit_dimension: insert new row
-    INSERT INTO unit_dimension (id, name, ...) VALUES (?, ?, ...)
-"""
+-- unit_dimension: insert new row
+INSERT INTO unit_dimension (id, name, ...) VALUES (?, ?, ...)
 ```
 
 ---
@@ -219,18 +189,18 @@ SQL keywords are uppercase. Each major clause (`SELECT`, `FROM`, `INNER JOIN`, `
 ```sql
 -- Correct
 SELECT
-    iav.item_id,
+    iav.item_uuid,
     iav.attribute_id,
     iav.value
 FROM item_attribute_value AS iav
 INNER JOIN item AS i
-    ON i.id = iav.item_id
+    ON i.uuid = iav.item_uuid
 WHERE iav.attribute_id = ?
   AND iav.value IS NOT NULL
 ORDER BY iav.value
 
 -- Wrong
-select item_id,attribute_id,value from item_attribute_value
+select item_uuid,attribute_id,value from item_attribute_value
 where attribute_id=? and value is not null order by value
 ```
 
@@ -262,9 +232,9 @@ INSERT INTO unit_dimension (
     id,
     name,
     base_unit,
-    deleted_at,
-    created_by_user_id,
-    updated_by_user_id
+    deleted_ts,
+    created_user_uuid,
+    updated_user_uuid
 ) VALUES (?, ?, ?, ?, ?, ?)
 
 -- Wrong
@@ -275,7 +245,7 @@ INSERT INTO unit_dimension VALUES (?, ?, ?, ?, ?, ?)
 
 ## Batch Forms
 
-Every INSERT and UPDATE statement has both a single-row form and a batch form. Both use the same named constant; only the execution method differs. The batch form is the primary path for bulk operations.
+Every INSERT and UPDATE has both a single-row form and a batch form built from the same definition; only the execution method differs (`execute` vs `executemany`). The batch form is the primary path for bulk operations. (The examples below show the emitted SQL shape; the query component assembles it — it is not hand-written as a class constant.)
 
 ```python
 _INSERT = """
@@ -312,52 +282,25 @@ def add(self, conn, dim: UnitDimension) -> None:
 
 # SQLite-Specific Standards
 
-The following rules apply **only** to the SQLite + cr-sqlite backend. They do not apply when writing a Postgres (or other DBMS) mapper. CRR and LOG table concepts are SQLite/cr-sqlite constructs; a real DBMS backend uses its own replication and transaction mechanisms instead.
+The following rules apply **only** to the libSQL/SQLite backend. They do not apply when writing a Postgres (or other DBMS) mapper, which uses its own type system and conventions. See `thinghound-architecture.md` §9 for the full type mapping.
 
 ---
 
-## CRR/LOG Physical Constraints
+## Physical Rules
 
-These are requirements of cr-sqlite, not of SQL in general. See `docs/dev/crsqlite-spike-findings.md` for empirical verification and `thinghound-architecture.md` §9 for the full type mapping.
+**Primary keys signal their type.** Structure/master-data tables use a DB-generated `INTEGER PRIMARY KEY` (normal rowid table); operational/transactional tables use a `UUID` PK stored as `BLOB(16)`. The PK column is named `id` (integer) or `uuid` (uuid). FK columns end in `_id` or `_uuid` to match the referenced PK's type.
 
-**Every non-PK `NOT NULL` column must declare a `DEFAULT` value.**
-cr-sqlite applies column-level changesets independently. A column arriving before others must not violate NOT NULL on partially-applied rows.
+**Tables with a non-integer (uuid) primary key are declared `WITHOUT ROWID`.** This makes the declared primary key the table's native storage key. Integer-`id` tables are normal rowid tables. `AUTOINCREMENT`/sequences are permitted on integer keys where useful.
 
-```sql
--- Correct
-name    TEXT    NOT NULL DEFAULT '',
-scale   INTEGER NOT NULL DEFAULT 0
+**Foreign keys are enforced** (`PRAGMA foreign_keys = ON`). DDL uses real `REFERENCES` clauses.
 
--- Wrong — cr-sqlite rejects crsql_as_crr
-name TEXT NOT NULL
-```
+**`CHECK` constraints — single-column and cross-column — are both permitted.**
 
-**No cross-column `CHECK` constraints.**
-A cross-column check may fire on a partial changeset and reject a valid remote write. Enforce cross-column invariants at the service layer or post-merge integrity check.
-
-```sql
--- Wrong on CRR/LOG tables
-CHECK ((value IS NULL) = (display_unit IS NULL))
-```
-
-**Single-column `CHECK` constraints** are acceptable if conservative.
-
-**No `AUTOINCREMENT`.** Device-local sequences cannot be safely merged across peers.
-
-**No `REAL` columns.** Floating-point loses precision in the JSON changeset serialization used by cr-sqlite.
-
-**Tables with non-integer primary keys must be declared `WITHOUT ROWID`.** In SQLite, rowid tables duplicate storage for non-integer PK lookups and can weaken key semantics for composite/text/blob primary keys; `WITHOUT ROWID` makes the declared primary key the table's native storage key and is the required form for ThingHound non-integer PK tables.
+**No `REAL` columns** (the no-float rule). `Decimal` and `Money` use the encodings in `thinghound-architecture.md` §9.
 
 **Temporal columns are `INTEGER` epoch values, never `TEXT`.** `Timestamp` and `Date` columns store an epoch integer (epoch milliseconds, UTC — see `thinghound-architecture.md` §9); the mapper encodes the model's ISO-8601 value to the epoch integer and decodes it back at the storage boundary. `HLC` remains `TEXT` (a causal-clock string, not a wall-clock datetime).
 
-**Schema changes to CRR/LOG tables use cr-sqlite's alter protocol:**
-```sql
-SELECT crsql_begin_alter('table_name');
-ALTER TABLE table_name ADD COLUMN notes TEXT DEFAULT NULL;
-SELECT crsql_commit_alter('table_name');
-```
-
-The CI guard (`scripts/check_crr_rules.py`) enforces these rules on every migration file. A migration that violates any of them must not be merged.
+**No column name ends with a preposition** — `created_ts`, not `created_at`; `qty_per_assembly`, not `qty_per`.
 
 ---
 

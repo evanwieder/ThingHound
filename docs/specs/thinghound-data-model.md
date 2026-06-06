@@ -624,13 +624,14 @@ Default attribute values for a product series, auto-populated to new items.
 ## 8. Core Item
 
 ### `item`
-The abstract catalog item — the orderable, reusable entity. An item belongs to one or more categories via `item_category`; there is no primary category.
+The abstract catalog item — the orderable, reusable entity. An item belongs to one or more categories via `item_category`. There is no primary category; a single **naming category** (`naming_category_id`) is the per-item fallback for name rendering and for display-column resolution when no category section is active.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `uuid` | UUID | Yes | |
 | `sku` | String | Yes | Soft-unique; mandatory stable internal key |
 | `parent_item_uuid` | UUID | No | FK to `item`; NULL = not a variant child |
+| `naming_category_id` | Integer | No | FK to `category`; must be one of the item's categories that has a name template. Renders `derived_name` and resolves display columns when no category section is active. Defaults to the first assigned category with a template; user-overridable |
 | `manufacturer_id` | Integer | No | FK to `manufacturer` |
 | `part_number` | String | No | MPN or GPN |
 | `product_series_id` | Integer | No | FK to `product_series` |

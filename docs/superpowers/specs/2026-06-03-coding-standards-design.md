@@ -1,7 +1,9 @@
 # Coding Standards Infrastructure — Design
-# this file is superceded but may still be used as a reference.
+
+> **Superseded 2026-06-06.** Historical design record. Authoritative standards: `coding_standards.md`, `docs/dev/standards-*.md` + `docs/dev/agent/` copies. cr-sqlite, the named-SQL-constant rule, and CRR/LOG/LOCAL sync classes here have been replaced (Turso/libSQL, model-aware query component, per-table audit). Read for history only.
+
 **Date:** 2026-06-03  
-**Status:** Approved  
+**Status:** Superseded (historical record)  
 **Trigger:** Phase 1 repository implementation surfaced missing SQL and repository architecture standards; existing CLAUDE.md mixed agent instructions with coding standards, and had no SQL, data-model, repository, or testing standards at all.
 
 ---

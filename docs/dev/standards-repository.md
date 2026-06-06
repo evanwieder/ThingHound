@@ -16,47 +16,28 @@ An **aggregate mapper** owns a *persistence aggregate* — a root entity and all
 
 ## SQL Ownership
 
-All SQL for an aggregate lives in its mapper as named class-level constants. No SQL appears anywhere else — not in services, not in domain objects, not in tests, not in free functions.
+SQL is built by the model-aware query component from the mapper's column and relationship metadata. The mapper owns that metadata and the row ↔ model conversions; it does not hand-write SQL strings or store them as class constants. Callers express intent only. No SQL appears anywhere else — not in services, not in domain objects, not in tests, not in free functions. (The examples below show the emitted SQL shape, not literal constants to copy.)
 
 ```python
 class UnitDimensionMapper:
     """Aggregate mapper for unit_dimension and unit_multiplier tables."""
 
-    _GET_BY_ID = """
-        -- unit_dimension: fetch single row by primary key
-        SELECT
-            ud.id,
-            ud.name,
-            ud.base_unit,
-            ud.deleted_at,
-            ud.created_by_user_id,
-            ud.updated_by_user_id
-        FROM unit_dimension ud
-        WHERE ud.id = ?
-    """
-
-    _LIST_ACTIVE = """
-        -- unit_dimension: list all non-deleted rows ordered by name
-        SELECT
-            ud.id,
-            ud.name,
-            ud.base_unit,
-            ud.deleted_at,
-            ud.created_by_user_id,
-            ud.updated_by_user_id
-        FROM unit_dimension ud
-        WHERE ud.deleted_at IS NULL
-        ORDER BY ud.name
-    """
-
-    _INSERT = """
-        -- unit_dimension: insert new row
-        INSERT INTO unit_dimension (
-            id, name, base_unit, deleted_at,
-            created_by_user_id, updated_by_user_id
-        ) VALUES (?, ?, ?, ?, ?, ?)
-    """
+    # emitted shape — fetch single row by primary key
+    #   SELECT ud.id, ud.name, ud.base_unit
+    #   FROM unit_dimension AS ud
+    #   WHERE ud.id = ?
+    #
+    # emitted shape — list all non-deleted rows ordered by name
+    #   SELECT ud.id, ud.name, ud.base_unit
+    #   FROM unit_dimension AS ud
+    #   WHERE ud.deleted_ts IS NULL
+    #   ORDER BY ud.name
+    #
+    # emitted shape — insert new row
+    #   INSERT INTO unit_dimension (name, base_unit) VALUES (?, ?)
 ```
+
+`unit_dimension` is a structure table, so its PK is a DB-generated integer `id` and the model does not carry it through audit columns (`deleted_ts`, `created_user_uuid`, `updated_user_uuid` are excluded from the model and surfaced via a separate `Audit` object on demand; `deleted_ts` is still used in WHERE filters at the SQL level).
 
 ---
 
@@ -72,13 +53,10 @@ class UnitDimensionMapper:
             id=row["id"],
             name=row["name"],
             base_unit=row["base_unit"],
-            deleted_at=row["deleted_at"],
-            created_by_user_id=row["created_by_user_id"],
-            updated_by_user_id=row["updated_by_user_id"],
         )
 
-    def get(self, conn: sqlite3.Connection, id: uuid.UUID) -> UnitDimension | None:
-        row = conn.execute(self._GET_BY_ID, (id.bytes,)).fetchone()
+    def get(self, conn: sqlite3.Connection, id: int) -> UnitDimension | None:
+        row = self.query.get(conn, UnitDimension, id=id)
         return self._from_row(row) if row else None
 ```
 
@@ -91,7 +69,7 @@ Free module-level `_row_to_dimension()` functions are the antipattern this repla
 The naming of the `*_from_row` / `*_to_row` converters depends on how many entity types the mapper maps:
 
 - A mapper that maps a **single entity type** names its converters **`_from_row` / `_to_row`**. The class name already identifies the type; an entity prefix would be noise.
-- A mapper that maps **several entity types** (a compound aggregate — e.g. `AttributeDefinitionMapper` mapping `attribute_definition`, `attribute_enum_value`, `attribute_component`, `attribute_allowed_prefix`) names one converter per type using the form **`_<entity>_from_row` / `_<entity>_to_row`** (e.g. `_definition_from_row`, `_enum_value_from_row`, `_component_from_row`, `_allowed_prefix_from_row`) to disambiguate.
+- A mapper that maps **several entity types** (a compound aggregate — e.g. `AttributeMapper` mapping `attribute`, `attribute_enum_value`, `attribute_component`, `attribute_allowed_prefix`) names one converter per type using the form **`_<entity>_from_row` / `_<entity>_to_row`** (e.g. `_attribute_from_row`, `_enum_value_from_row`, `_component_from_row`, `_allowed_prefix_from_row`) to disambiguate.
 
 ```python
 # Single-entity mapper — unprefixed converters
@@ -100,8 +78,8 @@ class UnitDimensionMapper:
     def _to_row(self, dim: UnitDimension) -> tuple: ...
 
 # Compound mapper — one converter per owned type, each prefixed
-class AttributeDefinitionMapper:
-    def _definition_from_row(self, row): ...      # attribute_definition
+class AttributeMapper:
+    def _attribute_from_row(self, row): ...       # attribute
     def _enum_value_from_row(self, row): ...      # attribute_enum_value
     def _component_from_row(self, row): ...       # attribute_component
     def _allowed_prefix_from_row(self, row): ...  # attribute_allowed_prefix
@@ -116,7 +94,7 @@ Mappers never call `commit()` or `rollback()`. Transaction scope is the session'
 ```python
 # Correct — mapper writes but does not commit
 def add(self, conn: sqlite3.Connection, dim: UnitDimension) -> None:
-    conn.execute(self._INSERT, self._to_row(dim))
+    self.query.insert(conn, UnitDimension, self._to_row(dim))
 
 # Correct caller usage — session owns the transaction
 with session.transaction():
@@ -133,7 +111,7 @@ Public mapper methods accept and return domain model instances — never raw tup
 
 ```python
 # Correct
-def get(self, conn: sqlite3.Connection, id: uuid.UUID) -> UnitDimension | None: ...
+def get(self, conn: sqlite3.Connection, id: int) -> UnitDimension | None: ...
 def list_active(self, conn: sqlite3.Connection) -> list[UnitDimension]: ...
 def add(self, conn: sqlite3.Connection, dim: UnitDimension) -> None: ...
 def add_batch(self, conn: sqlite3.Connection, dims: list[UnitDimension]) -> None: ...
@@ -151,21 +129,13 @@ Every write operation has both a single-row form and a batch (`executemany`) for
 
 ```python
 def add(self, conn: sqlite3.Connection, dim: UnitDimension) -> None:
-    conn.execute(self._INSERT, self._to_row(dim))
+    self.query.insert(conn, UnitDimension, self._to_row(dim))
 
 def add_batch(self, conn: sqlite3.Connection, dims: list[UnitDimension]) -> None:
-    conn.executemany(self._INSERT, [self._to_row(d) for d in dims])
+    self.query.insert_many(conn, UnitDimension, [self._to_row(d) for d in dims])
 ```
 
 Collections use `items.save()` → one batched statement in one transaction, not a per-item loop.
-
----
-
-## Single-Writer-Per-Table Invariant
-
-A mapper may own many tables, but each table is written by exactly one aggregate mapper. Two mappers may never write the same table. Read queries may cross table boundaries freely.
-
-This invariant is what makes the mapper the single authoritative home for each table's write SQL. Violating it creates two code paths that can disagree about column lists, defaults, and data transformations.
 
 ---
 
@@ -179,6 +149,6 @@ This is the test: could you change the physical schema and have it only affect t
 
 ## The AppRegistry
 
-Config and structure data (unit dimensions, attribute categories, attribute definitions, category trees) is loaded at startup into the `AppRegistry` singleton and held in memory for the session. Operational code accesses structure through the registry — it does not issue SQL queries to look up attribute definitions or unit dimensions at runtime.
+Config and structure data (unit dimensions, attribute domains, attributes, category trees) is loaded at startup into the `AppRegistry` singleton and held in memory for the session. Operational code accesses structure through the registry — it does not issue SQL queries to look up attributes or unit dimensions at runtime.
 
 The AppRegistry is populated by the same mappers that service operational writes. It is refreshed when structure changes (rare). It is not a general-purpose cache; it is the in-memory representation of configuration that must be consistent for the whole session.
