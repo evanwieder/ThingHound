@@ -67,33 +67,28 @@ export class TreeState {
   visible() {
     const result = [];
     const lowerQuery = this.query.toLowerCase();
+    const filterActive = lowerQuery.length > 0;
     const matchesQuery = (node) =>
-      lowerQuery.length === 0 || node.name.toLowerCase().includes(lowerQuery);
-
-    const visit = (node, depth, ancestorOpen) => {
-      const isOpen = lowerQuery.length > 0 ? true : this.expanded.has(node.id);
-      const visible = ancestorOpen && (lowerQuery.length > 0 || depth === 0 || this.expanded.has(this.findAncestorId(node) ?? ""));
-      if (!matchesQuery(node)) {
-        return;
-      }
-      result.push({ id: node.id, name: node.name, depth, hasChildren: (node.children ?? []).length > 0, isOpen });
-    };
+      !filterActive || node.name.toLowerCase().includes(lowerQuery);
 
     const recurse = (node, depth, ancestorExpanded) => {
-      if (!matchesQuery(node)) {
-        if (!ancestorExpanded) {
-          return;
-        }
-        for (const child of node.children ?? []) {
-          recurse(child, depth + 1, ancestorExpanded && this.expanded.has(node.id));
-        }
+      if (!ancestorExpanded) {
         return;
       }
-      if (ancestorExpanded) {
-        result.push({ id: node.id, name: node.name, depth, hasChildren: (node.children ?? []).length > 0, isOpen: this.expanded.has(node.id) });
+      const isExpanded = filterActive || this.expanded.has(node.id);
+      if (matchesQuery(node)) {
+        result.push({
+          id: node.id,
+          name: node.name,
+          depth,
+          hasChildren: (node.children ?? []).length > 0,
+          isOpen: isExpanded
+        });
       }
-      for (const child of node.children ?? []) {
-        recurse(child, depth + 1, ancestorExpanded && this.expanded.has(node.id));
+      if (isExpanded) {
+        for (const child of node.children ?? []) {
+          recurse(child, depth + 1, ancestorExpanded);
+        }
       }
     };
 
@@ -101,10 +96,6 @@ export class TreeState {
       recurse(node, 0, true);
     }
     return result;
-  }
-
-  findAncestorId(_node) {
-    return null;
   }
 }
 
@@ -115,12 +106,6 @@ function walkAll(nodes, callback) {
       walkAll(node.children, callback);
     }
   }
-}
-
-function collectIds(nodes) {
-  const ids = [];
-  walkAll(nodes, (node) => ids.push(node.id));
-  return ids;
 }
 
 export function renderTreeToolbar(target, { onCollapseAll, onExpandAll, onSearch, onEdit } = {}) {
@@ -196,7 +181,6 @@ export async function initTree(toolbarTarget, bodyTarget, bridgeApi, onFilter) {
   }
 
   const state = new TreeState(categoryTree);
-  const allIds = new Set(collectIds(categoryTree));
 
   const renderCurrent = () => renderTreeList(bodyTarget, state, onFilter);
 
