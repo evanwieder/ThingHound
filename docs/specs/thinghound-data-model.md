@@ -25,7 +25,7 @@ Physical encoding is DBMS-specific; see the Type Mapping appendix in `thinghound
 
 **No floating-point anywhere.** Numeric attribute values are stored as exact **Decimal** in base units. The physical encoding on SQLite uses a dual-column representation (scaled integer + exact text); on Postgres a single NUMERIC column suffices. The logical model uses `Decimal` throughout. The mapper handles the encoding.
 
-A `scale` property on each `attribute_definition` specifies the number of significant decimal places used for comparison, indexing, and precision. This is a domain concept — it drives the physical precision per DBMS. Two attributes in the same dimension may have different scales for different practical ranges.
+A `scale` property on each `attribute` specifies the number of significant decimal places used for comparison, indexing, and precision. This is a domain concept — it drives the physical precision per DBMS. Two attributes in the same dimension may have different scales for different practical ranges.
 
 ### Money
 
@@ -125,14 +125,6 @@ Aggregation applied to instance measurements for a column mapping.
 | C | Count | Number of instances with a measured value |
 | R | Range | Difference between max and min measured values |
 
-### `grid_scope`
-Scope of a Grid Configuration.
-
-| code | name | description |
-|------|------|-------------|
-| G | Global | Applies across all categories (the all-items grid) |
-| C | Category | Applies when a specific category is selected |
-
 ### `instance_display`
 How individuated instances are shown in the grid.
 
@@ -142,7 +134,7 @@ How individuated instances are shown in the grid.
 | E | Expanded | Individuated members shown as child rows under their parent item |
 
 ### `sort_direction`
-Direction of a column sort in a Grid Configuration.
+Direction of a column sort.
 
 | code | name | description |
 |------|------|-------------|
@@ -382,7 +374,7 @@ A specific named unit within a dimension (including the base unit itself).
 | `is_si_generated` | Boolean | Yes | True = auto-generated from a prefix set |
 | `deleted_ts` | Timestamp | No | |
 
-### `attribute_definition`
+### `attribute`
 A named, typed, measurable property within one attribute domain. Two attributes with the same name in different attribute domains are entirely distinct entities.
 
 | Attribute | Type | Required | Notes |
@@ -405,7 +397,7 @@ Which prefixes are selectable for entry on a specific numeric attribute.
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `id` | Integer | Yes | |
-| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
+| `attribute_id` | Integer | Yes | FK to `attribute` |
 | `prefix_id` | Integer | Yes | FK to `prefix` |
 
 ### `attribute_enum_value`
@@ -414,7 +406,7 @@ Ordered members of an Enum-type attribute.
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `id` | Integer | Yes | |
-| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
+| `attribute_id` | Integer | Yes | FK to `attribute` |
 | `value` | String | Yes | Internal key |
 | `label` | String | No | Display label |
 | `sort_order` | Integer | Yes | |
@@ -426,7 +418,7 @@ A named component within a Composite attribute.
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `id` | Integer | Yes | |
-| `attribute_definition_id` | Integer | Yes | FK to composite `attribute_definition` |
+| `attribute_id` | Integer | Yes | FK to composite `attribute` |
 | `key` | String | Yes | e.g., length, diameter, width |
 | `label` | String | No | |
 | `value_type_code` | String | Yes | FK to `value_type`; N/I/S/E/B/U only |
@@ -451,23 +443,22 @@ All categories live in a **single unified forest** with one unnamed root. The ro
 | `parent_id` | Integer | No | FK to `category`; NULL = unnamed root |
 | `id_path` | String | Yes | Slash-joined integer ids from root to this node e.g. `1/4/12` |
 | `full_path` | String | Yes | Slash-joined names from root to this node e.g. `Merchandising/Passive/Resistor` |
-| `default_grid_config_id` | Integer | No | FK to `grid_configuration`; this category's default layout |
 | `deleted_ts` | Timestamp | No | |
 
 ### `category_attribute`
-Assigns an attribute definition to a category with per-assignment settings.
+Binds or suppresses an attribute at a category level. Inheritance falls through to the nearest ancestor row. A row at a child level always overrides the ancestor for that attribute.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `id` | Integer | Yes | |
 | `category_id` | Integer | Yes | FK to `category` |
-| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
-| `is_required` | Boolean | Yes | Whether this attribute is required for completeness |
-| `sort_order` | Integer | Yes | |
-| `default_value` | JSON | No | Default for the entry form |
-| `is_override` | Boolean | Yes | True = overrides an inherited binding from an ancestor category |
+| `attribute_id` | Integer | Yes | FK to `attribute` |
+| `is_excluded` | Boolean | Yes | True = attribute is suppressed at this level and inherited by descendants; all other fields ignored when true |
+| `is_required` | Boolean | No | Whether this attribute is required for completeness; falls through from ancestor if absent |
+| `sort_order` | Integer | No | UI ordering; falls through from ancestor if absent |
+| `default_value` | JSON | No | Default for the entry form; falls through from ancestor if absent |
 
-No `is_inherited` attribute. Inheritance is computed at runtime from the category tree.
+No row at a given level means full fallthrough from the nearest ancestor. A descendant of an excluding category can reintroduce the attribute by defining a new row with `is_excluded = false`.
 
 ---
 
@@ -483,8 +474,7 @@ A global, user-defined named grid column slot shared across all categories.
 | `position` | Integer | Yes | Global order |
 | `default_width` | Integer | No | |
 | `value_kind_hint_code` | String | No | FK to `value_kind_hint`; N/T/A |
-| `is_hero` | Boolean | Yes | Pinned/prominent column |
-| `item_field_key` | String | No | When set: binds to a universal item field (sku, name, on_hand, markings, etc.) |
+| `item_field_key` | String | No | When set: binds to a universal item field (sku, derived_name, fixed_name, on_hand, markings, etc.) |
 | `deleted_ts` | Timestamp | No | |
 
 ### `category_column_mapping`
@@ -495,7 +485,7 @@ Binds a Display Column to a mapping target for a specific category. Soft-unique 
 | `id` | Integer | Yes | |
 | `category_id` | Integer | Yes | FK to `category` |
 | `display_column_id` | Integer | Yes | FK to `display_column` |
-| `attribute_definition_id` | Integer | No | FK to `attribute_definition`; direct attribute binding |
+| `attribute_id` | Integer | No | FK to `attribute`; direct attribute binding |
 | `attribute_component_id` | Integer | No | FK to `attribute_component`; specific composite component |
 | `source_layer_code` | String | Yes | FK to `source_layer`; C/I |
 | `aggregate_code` | String | No | FK to `aggregate_function`; N/X/A/C/R; set when source layer = I |
@@ -510,41 +500,84 @@ Per-category name template.
 | `category_id` | Integer | Yes | FK to `category`; soft-unique |
 | `name_template` | String | Yes | Jinja2 expression |
 
-### `grid_configuration`
-A named, savable grid layout.
+### `grid_layout`
+A named, savable physical grid layout. Has no association with categories or search — it defines only the visual structure of the grid.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `id` | Integer | Yes | |
 | `name` | String | Yes | |
-| `scope_code` | String | Yes | FK to `grid_scope`; G/C |
-| `category_id` | Integer | No | FK to `category`; set when scope = C |
 | `instance_display_code` | String | Yes | FK to `instance_display`; A/E |
-| `filter` | JSON | No | Saved predicate tree |
 | `created_ts` | Timestamp | Yes | |
 | `deleted_ts` | Timestamp | No | |
 
-### `grid_configuration_column`
-Visible columns and display settings for a Grid Configuration.
+### `grid_layout_column`
+Visible columns for a grid layout.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `configuration_id` | Integer | Yes | PK part; FK to `grid_configuration` |
+| `grid_layout_id` | Integer | Yes | PK part; FK to `grid_layout` |
 | `display_column_id` | Integer | Yes | PK part; FK to `display_column` |
-| `position` | Integer | Yes | |
+| `position` | Integer | Yes | Left-to-right order |
 | `width` | Integer | No | |
-| `is_pinned` | Boolean | Yes | |
-| `sort_priority` | Integer | No | |
-| `sort_direction_code` | String | No | FK to `sort_direction`; A/D |
+| `is_pinned` | Boolean | Yes | Frozen to left edge |
 
-### `grid_configuration_grouping`
-Ordered group-by levels for a Grid Configuration.
+### `grid_layout_sort`
+Saved multi-level sort for a grid layout. Identified by position, not by column — the same column may not appear twice.
 
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
-| `configuration_id` | Integer | Yes | PK part; FK to `grid_configuration` |
-| `display_column_id` | Integer | Yes | PK part; FK to `display_column` |
-| `position` | Integer | Yes | |
+| `grid_layout_id` | Integer | Yes | PK part; FK to `grid_layout` |
+| `position` | Integer | Yes | PK part; 1 = primary sort |
+| `display_column_id` | Integer | Yes | FK to `display_column` |
+| `sort_direction_code` | String | Yes | FK to `sort_direction`; A/D |
+
+### `grid_layout_grouping`
+Saved group-by levels for a grid layout. Identified by position — outermost group first.
+
+| Attribute | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `grid_layout_id` | Integer | Yes | PK part; FK to `grid_layout` |
+| `position` | Integer | Yes | PK part; 1 = outermost grouping level |
+| `display_column_id` | Integer | Yes | FK to `display_column` |
+
+### `saved_search_group`
+Organizes saved searches into named groups (one level deep).
+
+| Attribute | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `id` | Integer | Yes | |
+| `name` | String | Yes | |
+| `sort_order` | Integer | Yes | UI ordering |
+
+### `saved_search`
+A named, reusable search: a full-text query, a parametric predicate tree, or both. Either may be absent but not both.
+
+| Attribute | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `id` | Integer | Yes | |
+| `saved_search_group_id` | Integer | No | FK to `saved_search_group` |
+| `name` | String | Yes | |
+| `text_query` | String | No | Full-text search term; runs against `fts_item` |
+| `predicate` | JSON | No | Parametric predicate tree (AND/OR of attribute/field criteria) |
+| `tags` | JSON | No | Array of user-defined tag strings for organization |
+| `created_ts` | Timestamp | Yes | |
+| `updated_ts` | Timestamp | Yes | |
+| `deleted_ts` | Timestamp | No | |
+
+### `grid_view`
+A named, savable combination of a grid layout and a saved search. Selecting a view replaces both the current layout and current search in one action.
+
+| Attribute | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `id` | Integer | Yes | |
+| `name` | String | Yes | |
+| `grid_layout_id` | Integer | Yes | FK to `grid_layout` |
+| `saved_search_id` | Integer | Yes | FK to `saved_search` |
+| `tags` | JSON | No | Array of user-defined tag strings for organization |
+| `created_ts` | Timestamp | Yes | |
+| `updated_ts` | Timestamp | Yes | |
+| `deleted_ts` | Timestamp | No | |
 
 ---
 
@@ -579,7 +612,7 @@ Default attribute values for a product series, auto-populated to new items.
 |-----------|------|----------|-------|
 | `id` | Integer | Yes | |
 | `product_series_id` | Integer | Yes | FK to `product_series` |
-| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
+| `attribute_id` | Integer | Yes | FK to `attribute` |
 | `value` | Decimal | No | Numeric value in base units |
 | `value_text` | String | No | For string/enum/boolean/url types |
 | `display_unit` | String | No | Symbol of the entry unit |
@@ -608,6 +641,8 @@ The abstract catalog item — the orderable, reusable entity. An item belongs to
 | `reorder_point` | Decimal | No | In stock units |
 | `reorder_qty` | Decimal | No | In stock units |
 | `safety_stock` | Decimal | No | In stock units |
+| `derived_name` | String | No | Rendered by the naming engine from the category name template + attribute values; never user-editable |
+| `fixed_name` | String | No | Optional user-set name; overrides `derived_name` for display when not NULL |
 | `description` | String | No | |
 | `markings` | String | No | Physical identification marks; full-text searchable |
 | `nominal_footprint` | String | No | |
@@ -657,7 +692,7 @@ Catalog-layer attribute values on an item. One row per `(item, attribute)`.
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `item_uuid` | UUID | Yes | PK part; FK to `item` |
-| `attribute_definition_id` | Integer | Yes | PK part; FK to `attribute_definition` |
+| `attribute_id` | Integer | Yes | PK part; FK to `attribute` |
 | `value` | Decimal | No | Numeric value in base units (Numeric and Integer attributes) |
 | `value_text` | String | No | For String / Enum / Boolean / URL attributes |
 | `display_unit` | String | No | Symbol of the unit the value was entered in |
@@ -674,7 +709,7 @@ Per-component values for Composite attributes. One row per `(item, attribute, co
 | Attribute | Type | Required | Notes |
 |-----------|------|----------|-------|
 | `item_uuid` | UUID | Yes | PK part; FK to `item` |
-| `attribute_definition_id` | Integer | Yes | PK part; FK to composite `attribute_definition` |
+| `attribute_id` | Integer | Yes | PK part; FK to composite `attribute` |
 | `attribute_component_id` | Integer | Yes | PK part; FK to `attribute_component` |
 | `value` | Decimal | No | Numeric value in base units |
 | `value_text` | String | No | |
@@ -691,7 +726,7 @@ Append-only measured values for tracked instances.
 |-----------|------|----------|-------|
 | `uuid` | UUID | Yes | |
 | `instance_uuid` | UUID | Yes | FK to `item_instance` |
-| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
+| `attribute_id` | Integer | Yes | FK to `attribute` |
 | `value` | Decimal | No | |
 | `value_text` | String | No | |
 | `display_unit` | String | No | |
@@ -987,7 +1022,7 @@ Hierarchy traversed via recursive queries on `parent_id`. No closure table.
 |-----------|------|----------|-------|
 | `id` | Integer | Yes | |
 | `name` | String | Yes | |
-| `target_attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
+| `target_attribute_id` | Integer | Yes | FK to `attribute` |
 | `expression` | String | Yes | simpleeval + Pint |
 | `enabled` | Boolean | Yes | |
 
@@ -999,7 +1034,7 @@ Maps expression symbols to source attributes.
 | `id` | Integer | Yes | |
 | `attribute_formula_id` | Integer | Yes | FK to `attribute_formula` |
 | `symbol` | String | Yes | e.g., $r for Resistance |
-| `attribute_definition_id` | Integer | Yes | FK to `attribute_definition` |
+| `attribute_id` | Integer | Yes | FK to `attribute` |
 | `layer_code` | String | Yes | FK to `formula_layer`; C/I/E |
 
 ### `formula_category`
@@ -1018,7 +1053,7 @@ Applicable categories for a formula.
 | `body` | String | Yes | Jinja2 |
 
 ### `ltspice_template_param`
-`id` Integer, `ltspice_template_id` Integer (FK to `ltspice_template`), `var_name` String (required), `attribute_definition_id` Integer (FK to `attribute_definition`).
+`id` Integer, `ltspice_template_id` Integer (FK to `ltspice_template`), `var_name` String (required), `attribute_id` Integer (FK to `attribute`).
 
 ### `datasheet_extraction`
 
@@ -1033,7 +1068,7 @@ Applicable categories for a formula.
 | `bbox_w` | Integer | No | |
 | `bbox_h` | Integer | No | |
 | `extracted_text` | String | No | |
-| `mapped_attribute_definition_id` | Integer | No | FK to `attribute_definition` |
+| `mapped_attribute_id` | Integer | No | FK to `attribute` |
 | `value` | Decimal | No | Extracted numeric value in base units |
 | `confidence` | Integer | No | 0–100 |
 | `status_code` | String | Yes | FK to `extraction_status`; P/A/R |
@@ -1148,7 +1183,7 @@ Current state of each tracked instance.
 | `status_code` | String | FK to `instance_status`; A/S/C/W/L |
 
 ### `fts_item`
-Full-text search index over item names, descriptions, SKUs, part numbers, markings, tags, and reference designators. Each dimensional attribute value is indexed in both its as-entered form and its canonical base-unit form. Maintained by triggers.
+Full-text search index over `derived_name`, `fixed_name`, descriptions, SKUs, part numbers, markings, tags, and reference designators. Each dimensional attribute value is indexed in both its as-entered form and its canonical base-unit form. Maintained by triggers; `derived_name` entries are updated whenever a relevant attribute value or name template changes.
 
 ### `rm_thumbnail`
 Cached thumbnail file paths and metadata for attachments.
