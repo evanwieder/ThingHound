@@ -67,7 +67,7 @@ export function buildColumns(displayColumns) {
   return [...base, ...dynamic];
 }
 
-export function buildGridOptions({ rows, displayColumns, onRowSelected }) {
+export function buildGridOptions({ rows, displayColumns }) {
   return {
     data: rows,
     layout: "fitColumns",
@@ -77,9 +77,9 @@ export function buildGridOptions({ rows, displayColumns, onRowSelected }) {
     rowHeight: 22,
     columnHeaderVertAlign: "middle",
     groupBy: "category_path_display",
-    groupHeader: (value, count) => `<span class="group-path">${value}</span> <span class="group-count">(${count} part${count === 1 ? "" : "s"})</span>`,
-    columns: buildColumns(displayColumns),
-    rowClick: (_event, row) => onRowSelected(row.getData())
+    groupHeader: (value, count) =>
+      `<span class="group-path">${value}</span> <span class="group-count">(${count} part${count === 1 ? "" : "s"})</span>`,
+    columns: buildColumns(displayColumns)
   };
 }
 
@@ -130,11 +130,25 @@ export async function initGrid(target, bridgeApi) {
     ];
   }
 
-  const table = new Tabulator(target, buildGridOptions({
-    rows,
-    displayColumns,
-    onRowSelected: emitSelection
-  }));
+  const table = new Tabulator(target, buildGridOptions({ rows, displayColumns }));
+
+  table.on("rowClick", (_event, row) => emitSelection(row.getData()));
+  table.on("rowDblClick", (_event, row) => emitSelection(row.getData()));
+
+  // Backup click delegation — if Tabulator's rowClick fails to fire for any
+  // reason (e.g. when the user clicks a sub-element that swallows the event),
+  // find the row from the DOM and emit the selection manually.
+  target.addEventListener("click", (event) => {
+    const rowEl = event.target?.closest(".tabulator-row");
+    if (rowEl == null) {
+      return;
+    }
+    const tabulatorRow = table.getRow(rowEl);
+    const data = tabulatorRow?.getData();
+    if (data != null) {
+      emitSelection(data);
+    }
+  });
 
   const reloadRows = async (filters = {}) => {
     if (bridgeApi == null) {
