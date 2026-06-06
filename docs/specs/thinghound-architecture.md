@@ -10,8 +10,7 @@
 - **No ORM.** All SQL is hand-written, parameterized, and owned by aggregate mappers. No SQL appears in service, domain, or UI code.
 - **Exact arithmetic everywhere.** No `REAL` for any value, quantity, or money. The Python→SQLite path uses exact rationals and `Decimal`; the storage path uses scaled integers and exact decimal text.
 - **The mapper is the dialect seam.** Every table's SQL lives in exactly one aggregate mapper. Swapping the database backend means writing new mappers; nothing above the mapper layer changes.
-- **Local-first correctness.** The schema is CRDT-ready from day one. cr-sqlite compatibility rules are enforced by a CI guard before any migration is merged.
-- **Derived data is LOCAL.** Nothing computed from sources is synced. Read-model tables, FTS indexes, and stock aggregates are rebuilt from CRR/LOG sources after every sync merge and maintained incrementally by DB-side triggers for local writes.
+- **Derived data is computed, not synced.** Read-model tables, FTS indexes, and stock aggregates are derived from source data and maintained incrementally by DB-side triggers. They are rebuilt in full when needed.
 - **Query-time display, index-time sort/filter.** Grid display values are computed at query time from well-indexed source tables. Pre-materialization is limited to stock aggregates. No application-side projector.
 
 ---
@@ -27,12 +26,12 @@
 | **Unit conversion** | Pint + exact rational preprocessing | All conversion through exact rationals/Decimal — Pint's float default is bypassed. Fraction-aware preprocessor normalizes input before Pint parsing. |
 | **Templating** | Jinja2 | Name templates, LTspice generation. |
 | **Database** | SQLite (FTS5 + JSON1, WAL mode) | Single file. FTS5 trigram for fuzzy search. |
-| **Sync** | cr-sqlite (loadable CRDT extension) | Conflict-free multi-writer merge, tombstones, column-level LWW. Bundled per-OS binary. |
+| **Sync** | Turso / libSQL | Local embedded replica syncs to a Turso primary. Single-user, non-simultaneous. Conflict reconciliation deferred. |
 | **DB driver** | `sqlite3` stdlib | Raw parameterized SQL, registered `Decimal`/`Money` type adapters. |
 | **Formula engine** | simpleeval + Pint | Allowlisted operators for computed attributes and display formulas. Best-effort isolation of user-authored formulas. |
 | **PDF extraction** | PyMuPDF (Phase 3) | Datasheet text and bounding-box extraction. |
-| **Thumbnails** | Pillow | Generated lazily; cached in LOCAL table. |
-| **Packaging** | PyInstaller (onedir) | Bundles webview dependencies and cr-sqlite binary. |
+| **Thumbnails** | Pillow | Generated lazily; cached in derived read-model table. |
+| **Packaging** | PyInstaller (onedir) | Bundles webview dependencies. |
 | **Backup** | Litestream (optional) | WAL streaming to object storage. Backup only — not sync. |
 | **Analytics (Phase 4)** | DuckDB | Read-only replica over the SQLite file; periodic refresh; never transactional. |
 
@@ -63,13 +62,13 @@
 │   └─ Query / Specification Objects                    │
 │        │                                              │
 │  ┌─────▼──────┐  ┌──────────────┐  ┌───────────────┐ │
-│  │ SQLite     │  │ cr-sqlite    │  │ Local FS      │ │
-│  │ FTS5/JSON1 │  │ (CRDT/CRR)   │  │ attachments   │ │
+│  │ libSQL     │  │ Turso        │  │ Local FS      │ │
+│  │ FTS5/JSON1 │  │ primary      │  │ attachments   │ │
 │  └─────┬──────┘  └──────┬───────┘  └───────────────┘ │
 └────────┼────────────────┼────────────────────────────┘
-         │ (optional)     │ changesets
+         │ (optional)     │ sync (single-user)
     Litestream            ▼
-    backup → S3/B2    Peer devices (sync)
+    backup → S3/B2    Turso cloud primary
 ```
 
 ---
@@ -132,13 +131,13 @@ All performance-critical queries use covering indexes:
 - Category traversal: `parent_id` index on `category` and `location`; recursive CTEs.
 - Event replay/costing: `(item_id, effective_date, hlc, id)` on `inventory_event`.
 
-### 5.3 LOCAL Stock Aggregates
+### 5.3 Derived Stock Aggregates
 
-Stock quantities (`rm_item_stock`, `rm_stock_by_location`, `rm_instance_state`) are pre-aggregated from events in LOCAL tables. These are the exception to query-time computation because event-log aggregation at query time over large event histories would be expensive. They are maintained by DB-side triggers on `inventory_event` and rebuilt in full after a sync merge.
+Stock quantities (`rm_item_stock`, `rm_stock_by_location`, `rm_instance_state`) are pre-aggregated from events into derived tables. These are the exception to query-time computation because event-log aggregation at query time over large event histories would be expensive. They are maintained by DB-side triggers on `inventory_event`. Each read-model keeps a materialized running value up to a watermark; a read returns the snapshot plus the fold of events past the watermark, so values are always correct. Aggregation advances the watermark and is compaction for performance, never required for correctness. Timing is configurable: on open, on close, every N minutes, or on demand.
 
-### 5.4 Sync Merge Rebuild
+### 5.4 Bulk Rebuild
 
-After every sync merge, all LOCAL derived tables are rebuilt from CRR/LOG sources in a single batch operation. Triggers are suppressed during the rebuild. For large imports, the same batch-mode path is used: insert all source rows without trigger overhead, then rebuild LOCAL tables once at the end.
+For large imports or restores, derived tables are rebuilt in a single batch operation. Triggers are suppressed during the rebuild; all source rows are inserted first, then derived tables are rebuilt once at the end.
 
 ---
 
@@ -151,7 +150,7 @@ cr-sqlite turns CRR and LOG tables into conflict-free replicated relations with 
 ### 6.2 Sync Classes
 
 - **CRR** — catalog, schema, configuration, items, attribute values, vendors, BOMs, synced app settings.
-- **LOG** — inventory events, instance measurements, offer history, audit log. Insert-only; no conflicts on write; merge trivially.
+- **LOG** — inventory events, instance measurements, offer history. Insert-only; no conflicts on write; merge trivially.
 - **LOCAL** — device settings, all derived/cached tables. Never synced. Rebuilt after merge.
 - **REF** — code tables (reference data). Application-defined values seeded by migrations. Identical on every device. Does not sync. Read-only at runtime.
 

@@ -9,13 +9,14 @@ These instructions apply to every agentic session in this repository and overrid
 These are always active. No additional file load required.
 
 - **No floating-point anywhere.** Domain values are `Decimal`; money is `Money`. Physical encoding is DBMS-specific (see `thinghound-architecture.md` §9) but is never a float.
-- **`UUIDv7` for all ID fields in domain models.** Use `UUIDv7` from `thinghound.types`. Canonical string only at the bridge boundary (`str(id)`). Never `bytes`, `str`, or `uuid.UUID` in domain models.
-- **`foreign_keys = OFF`** on every SQLite connection.
+- **PK strategy: integer `id` for structure/master-data tables; `UUIDv7` `uuid` for operational/transactional tables.** Use `UUIDv7` from `thinghound.types` for uuid PKs. FK column names follow the referenced PK's type: FK to an integer-PK table ends in `_id`; FK to a uuid-PK table ends in `_uuid`. Canonical string only at the bridge boundary. Never `bytes`, `str`, or plain `uuid.UUID` in domain models.
+- **FK enforcement ON.** Use real foreign keys in DDL.
+- **No column name may end with a preposition.** Use `created_ts`, `updated_ts`, `deleted_ts`, `created_user_id`, `updated_user_id` — never `created_at`, `created_by`, etc.
 - **Scale per `attribute_definition`**, not per `unit_dimension`.
-- **All SQL lives in aggregate mappers.** No SQL in service, domain, UI, or test code.
-- **All SQL is parameterized.** No string interpolation of values.
+- **SQL is built by the query component.** Callers express intent only; the query component decides construction and strategy. No SQL in service, domain, UI, or test code. No hand-written named SQL constants.
+- **All SQL is parameterized.** No string interpolation of values. Identifiers come only from metadata.
 - **Timestamps/dates are stored as epoch integers on SQLite** (epoch milliseconds, UTC), encoded/decoded by the mapper — never `TEXT`. `HLC` stays `TEXT` (causal-clock string). See `thinghound-architecture.md` §9.
-- **Logical model is DBMS-agnostic.** Physical constraints for SQLite CRR/LOG tables (DEFAULT on NOT NULL, no cross-column CHECK, etc.) are in `thinghound-architecture.md` §9 and `docs/dev/standards-sql.md`.
+- **Logical model is DBMS-agnostic.** Physical encoding belongs in mappers and `thinghound-architecture.md` §9.
 - **Do not use `from __future__ import annotations`.** Python 3.14 evaluates annotations lazily by default (PEP 649).
 - **Google-style docstrings are required on every module, class, function, and method — no exceptions.** This overrides any default assistant behaviour that omits docstrings. See `docs/dev/standards-python.md` for format.
 
@@ -40,10 +41,8 @@ Before beginning work in each domain, read the relevant compact standards file:
 
 Specifications are in `docs/specs/`:
 - `thinghound-functional-spec.md` — requirements, definitions, business rules
-- `thinghound-data-model.md` — logical data model (all entities, sync classes, type vocabulary)
+- `thinghound-data-model.md` — logical data model (all entities, type vocabulary)
 - `thinghound-architecture.md` — stack, persistence layers, physical type mapping, sync design
-
-cr-sqlite compatibility rules and empirical findings: `docs/dev/crsqlite-spike-findings.md`.
 
 ---
 
