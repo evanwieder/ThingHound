@@ -2,6 +2,9 @@ const MIN_LEFT = 36;
 const MIN_RIGHT = 36;
 const MIN_CENTER = 320;
 const MIN_FILTER = 28;
+const DEFAULT_LEFT_WIDTH = 240;
+const DEFAULT_RIGHT_WIDTH = 320;
+const DEFAULT_FILTER_HEIGHT = 160;
 
 function setupHorizontalSashes(workspace, leftPane, rightPane) {
   const leftSash = workspace.querySelector('[data-sash="left"]');
@@ -47,8 +50,11 @@ function setupHorizontalSashes(workspace, leftPane, rightPane) {
 function setupFilterSash(centerPane) {
   const bottomSash = centerPane.querySelector('[data-sash="bottom"]');
   const filterRegion = centerPane.querySelector("#filter-region");
+  if (bottomSash == null || filterRegion == null) {
+    return;
+  }
 
-  bottomSash?.addEventListener("pointerdown", (event) => {
+  bottomSash.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     const startY = event.clientY;
     const startHeight = filterRegion.getBoundingClientRect().height;
@@ -89,50 +95,51 @@ function notifyLayoutChanged() {
 function setupPaneMinimize(workspace, leftPane, rightPane, centerPane) {
   const leftSash = workspace.querySelector('[data-sash="left"]');
   const rightSash = workspace.querySelector('[data-sash="right"]');
+  const filterRegion = centerPane.querySelector("#filter-region");
+  const filterSash = centerPane.querySelector('[data-sash="bottom"]');
+
   const leftRestore = createRestoreBar({
     parent: workspace,
     id: "restore-left",
-    label: "◀",
+    label: "\u25C0",
     className: "restore-left is-collapsed",
     onRestore: () => {
       leftPane.classList.remove("is-collapsed");
       leftSash?.classList.remove("is-collapsed");
       leftRestore.classList.add("is-collapsed");
-      workspace.style.setProperty("--left-width", `${Math.max(MIN_LEFT, 260)}px`);
+      workspace.style.setProperty("--left-width", `${Math.max(MIN_LEFT, DEFAULT_LEFT_WIDTH)}px`);
       syncCenterBounds(workspace);
       notifyLayoutChanged();
-    },
+    }
   });
 
   const rightRestore = createRestoreBar({
     parent: workspace,
     id: "restore-right",
-    label: "▶",
+    label: "\u25B6",
     className: "restore-right is-collapsed",
     onRestore: () => {
       rightPane.classList.remove("is-collapsed");
       rightSash?.classList.remove("is-collapsed");
       rightRestore.classList.add("is-collapsed");
-      workspace.style.setProperty("--right-width", `${Math.max(MIN_RIGHT, 320)}px`);
+      workspace.style.setProperty("--right-width", `${Math.max(MIN_RIGHT, DEFAULT_RIGHT_WIDTH)}px`);
       syncCenterBounds(workspace);
       notifyLayoutChanged();
-    },
+    }
   });
 
-  const filterRegion = centerPane.querySelector("#filter-region");
-  const filterSash = centerPane.querySelector('[data-sash="bottom"]');
   const filterRestore = createRestoreBar({
     parent: centerPane,
     id: "restore-filter",
-    label: "▲",
+    label: "\u25B2",
     className: "restore-filter is-collapsed",
     onRestore: () => {
-      filterRegion.classList.remove("is-collapsed");
+      filterRegion?.classList.remove("is-collapsed");
       filterSash?.classList.remove("is-collapsed");
       filterRestore.classList.add("is-collapsed");
-      centerPane.style.setProperty("--filter-height", `${Math.max(MIN_FILTER, 160)}px`);
+      centerPane.style.setProperty("--filter-height", `${Math.max(MIN_FILTER, DEFAULT_FILTER_HEIGHT)}px`);
       notifyLayoutChanged();
-    },
+    }
   });
 
   leftPane.addEventListener("dblclick", () => {
@@ -153,7 +160,7 @@ function setupPaneMinimize(workspace, leftPane, rightPane, centerPane) {
     notifyLayoutChanged();
   });
 
-  filterRegion.addEventListener("dblclick", () => {
+  filterRegion?.addEventListener("dblclick", () => {
     filterRegion.classList.add("is-collapsed");
     filterSash?.classList.add("is-collapsed");
     filterRestore.classList.remove("is-collapsed");
