@@ -1,7 +1,9 @@
 # Persistence Architecture — Design
-# this file has been superceded but may still be used as a reference
+
+> **Superseded 2026-06-06.** Historical design record. Authoritative specs: `docs/specs/thinghound-{architecture,data-model,functional-spec}.md`. The cr-sqlite substrate, CRR/LOG/LOCAL sync classes, and hand-written-SQL-in-mappers shape here have been replaced (Turso/libSQL single-user sync, integer/uuid PK split, model-aware query component, per-table audit, watermark read-model). Read for history only.
+
 **Date:** 2026-06-03
-**Status:** Approved (pending written review)
+**Status:** Superseded (historical record)
 **Supersedes:** the repository-owns-SQL / `row_to_*` shape described in the data-model and repository sections of `2026-06-03-coding-standards-design.md`; reframes several "locked" substrate decisions in project memory (see *What this supersedes*).
 
 ---

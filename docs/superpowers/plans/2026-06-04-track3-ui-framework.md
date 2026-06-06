@@ -53,8 +53,8 @@ UI scaffolding does not unit-test cleanly the way backend code does; verificatio
 
 ### Task B2 — Tabulator grid (centre pane)
 
-- [ ] **Step 1: grid module** (§4.4) — virtualized (no pagination), compact rows, thumbnail column first, dynamic columns built from `grid.getDisplayColumns()` + `grid.getColumnMappings()`, hero column pinned + bold, group-by category with collapsible in-grid section headers, row-click emits a `row:selected` event (other regions consume it).
-- [ ] **Step 2: run and visually verify** — launch with `--mock` using a temporary fixture with three rows (resistor / capacitor / connector) sharing global Display Columns. **Expected:** grid renders three rows; hero column populated for the resistor row only; thumbnail column visible; scrolling does not paginate; clicking a row highlights it and fires the event (verify via `console.log` in dev).
+- [ ] **Step 1: grid module** (§4.4) — virtualized (no pagination), compact rows, thumbnail column first, dynamic columns built from `grid.getDisplayColumns()` + `grid.getColumnMappings()`, pinned (frozen) columns, group-by category with collapsible in-grid section headers, row-click emits a `row:selected` event (other regions consume it). Each row's name is its `fixed_name` if set, else its `derived_name`.
+- [ ] **Step 2: run and visually verify** — launch with `--mock` using a temporary fixture with three rows (resistor / capacitor / connector) sharing global Display Columns. **Expected:** grid renders three rows; a shared Display Column resolves to a different attribute per category (Resistance for the resistor, Capacitance for the capacitor, blank for the connector); thumbnail column visible; scrolling does not paginate; clicking a row highlights it and fires the event (verify via `console.log` in dev).
 - [ ] **Step 3: commit (after authorization)** `feat(ui): heterogeneous Tabulator grid`.
 
 ### Task B3 — Category tree (left pane)
@@ -65,7 +65,7 @@ UI scaffolding does not unit-test cleanly the way backend code does; verificatio
 
 ### Task B4 — Inspector (right pane)
 
-- [ ] **Step 1: inspector module** (§4.3) — top summary zone (name, SKU, mfr/PN, primary category, lifecycle, on-hand, thumbnail) always visible; bottom tabbed zone (Attributes, Stock & Events, Instances, Vendors, Alternates, BOM/Where-used, Simulation) populated from fixtures. Subscribes to the grid's `row:selected` event.
+- [ ] **Step 1: inspector module** (§4.3) — top summary zone (name, SKU, mfr/PN, naming category, lifecycle, on-hand, thumbnail) always visible; bottom tabbed zone (Attributes, Stock & Events, Instances, Vendors, Alternates, BOM/Where-used, Simulation) populated from fixtures. Subscribes to the grid's `row:selected` event.
 - [ ] **Step 2: run and visually verify** — with `--mock` and an item fixture. **Expected:** clicking a grid row populates the summary zone; all seven tabs are present and switchable; each tab shows its fixture content (or an empty-state placeholder if the fixture omits it).
 - [ ] **Step 3: commit (after authorization)** `feat(ui): inspector pane`.
 
@@ -79,9 +79,9 @@ UI scaffolding does not unit-test cleanly the way backend code does; verificatio
 
 ## 4. Task C — Main-Page Demo on Dummy Data (TOUCHSTONE — Gate D)
 
-**Files:** `ui/src/fixtures.js` (or served by `bridge.py` mock mode): a realistic heterogeneous catalog — resistors, capacitors, a connector, a mechanical part — with Display Columns and **per-category column mappings** so the grid renders a genuinely mixed grid aligned under shared columns. Values carry `value_exact`/display strings (no floats); a hero column (e.g. Resistance in a resistor view); on-hand quantities; a couple of thumbnails.
+**Files:** `ui/src/fixtures.js` (or served by `bridge.py` mock mode): a realistic heterogeneous catalog — resistors, capacitors, a connector, a mechanical part — with Display Columns and **per-category column mappings** so the grid renders a genuinely mixed grid aligned under shared columns. Values carry `value_exact`/display strings (no floats); a shared Display Column that resolves to a different attribute per category; on-hand quantities; a couple of thumbnails.
 
-- [ ] **Step 1:** author fixtures shaped **exactly** like §6 responses. Heterogeneity is the point: a resistor fills the hero column from Resistance, a capacitor from Capacitance, a mechanical part leaves it blank — all under the same global Display Columns.
+- [ ] **Step 1:** author fixtures shaped **exactly** like §6 responses. Heterogeneity is the point: a shared Display Column resolves to Resistance for a resistor, Capacitance for a capacitor, and blank for a mechanical part — all under the same global Display Columns.
 - [ ] **Step 2:** wire the demo through the **mock bridge** so the data path equals production (`window.pywebview.api.grid_query_items(...)` → mock → fixtures).
 - [ ] **Step 3:** run `python -m thinghound.ui.app --mock`; confirm full layout renders, grid is dense + heterogeneous, tree filtering works, row-click fills the inspector, filter chips render, panes resize/minimise.
 - [ ] **Step 4:** capture a screenshot of the running demo using the OS screenshot tool (macOS: `screencapture -w demo.png` and click the demo window; the file lands in the working directory). Attach it to the Gate-D approval request.
@@ -119,7 +119,7 @@ Listed, not detailed, until approved — detail is written at dispatch time to r
 
 ## 7. Self-Review (against the spec)
 
-- **Layout coverage:** §4.1 (three panes + toolbar + status bar + resize/minimise), §4.3 (two-zone inspector + seven tabs), §4.4 (Tabulator: thumbnail col, dynamic columns, hero pinned/bold, grouping, virtualization, row-click inspector), §4.5 (quick-search + chips + scope + config switcher).
+- **Layout coverage:** §4.1 (three panes + toolbar + status bar + resize/minimise), §4.3 (two-zone inspector + seven tabs), §4.4 (Tabulator: thumbnail col, dynamic columns, pinned columns, grouping, virtualization, row-click inspector), §4.5 (quick-search + chips + scope + layout/view/search switcher).
 - **Contract fidelity:** every mock response matches a §6 signature; scaled values carry `value_exact`; UUIDs are canonical strings; errors are typed envelopes → Gate-B swap is drop-in.
 - **Boundary:** the bridge converts UUID strings and shapes envelopes (transport boundary) and delegates to services; it performs no database row↔model conversion. The UI displays server-provided `value_exact`/display strings and never computes on raw scaled integers.
 - **Gate discipline:** Task C ends with an explicit STOP; no post-gate unit is detailed or started before user approval.
