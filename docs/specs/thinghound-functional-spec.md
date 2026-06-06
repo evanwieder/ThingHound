@@ -282,7 +282,7 @@ Shared pipeline: **Ingest → Match → Reconcile → Commit**
 
 ### 3.15 Asset Management
 
-- **Polymorphic attachments** (`attachment`): `owner_type` (`ITEM` / `INSTANCE` / `VENDOR` / `MANUFACTURER`), `owner_id`, `role` (`PHOTO` / `DATASHEET` / `DOCUMENT` / `MODEL` / `OTHER`), `file_path`, `mime_type`, `sha256`, `caption`, `sort_order`, `page_count`.
+- **Attachments** (`attachment`): `file_type_code` (`P/D/O/M/X` — FK to `file_type`), `file_path`, `description`. Items and invoices each maintain an ordered collection via junction tables (`item_attachment`, `invoice_attachment`). An attachment has no knowledge of its owner.
 - Files stored under the managed user-data directory. Relative paths in the database. Thumbnails generated lazily (Pillow) and cached in a LOCAL table.
 - Barcode/QR code fields on items, instances, and locations for future label generation and scanning.
 

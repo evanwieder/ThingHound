@@ -169,7 +169,7 @@ def new_id() -> uuid.UUID:
 
 **Files:** `migrations_sql/0001_ref_code_tables.sql`, `tests/db/test_ref_seed.py`.
 
-All 26 code tables from `data-model.md §3` (`value_type`, `value_kind_hint`, `source_layer`, `aggregate_function`, `grid_scope`, `instance_display`, `sort_direction`, `lifecycle_status`, `stock_mode`, `instance_kind`, `relationship_type`, `provenance`, `instance_status`, `event_type`, `project_status`, `match_status`, `import_kind`, `availability_status`, `bom_status`, `build_status`, `formula_layer`, `ltspice_template_type`, `extraction_status`, `attachment_owner_type`, `attachment_role`, `audit_action`). Each: `code TEXT PRIMARY KEY, name TEXT, description TEXT`, `-- sync: REF`, seeded with the exact rows from §3.
+All 24 code tables from `data-model.md §3` (`value_type`, `value_kind_hint`, `source_layer`, `aggregate_function`, `grid_scope`, `instance_display`, `sort_direction`, `lifecycle_status`, `stock_mode`, `instance_kind`, `relationship_type`, `provenance`, `instance_status`, `event_type`, `project_status`, `match_status`, `import_kind`, `availability_status`, `bom_status`, `build_status`, `formula_layer`, `ltspice_template_type`, `extraction_status`, `file_type`). Each: `code TEXT PRIMARY KEY, name TEXT, description TEXT`, `-- sync: REF`, seeded with the exact rows from §3.
 
 - [ ] **Step 1: failing tests** — e.g. `value_type` has 8 codes; `event_type` code `C` is `Consume`.
 - [ ] **Step 2: run → fail. Step 3: write the full SQL; run → pass; CRR guard clean. Step 4: commit** `feat: migration 0001 — REF code tables + seeds`.
@@ -244,9 +244,9 @@ DDL for **every** entity in `data-model.md §4–§19`. Each sub-task below is *
 - [ ] Failing test `test_schema_misc`: `item_tag` composite PK `(item_id, tag_id)`; `attribute_formula.enabled INTEGER NOT NULL DEFAULT 1` (Boolean as INTEGER); `formula_input.layer_code TEXT NOT NULL DEFAULT ''` (the `formula_layer` REF code lives on `formula_input`, not on `attribute_formula`); `datasheet_extraction.status_code TEXT NOT NULL DEFAULT ''`; `tag.name TEXT NOT NULL DEFAULT ''` (no secondary UNIQUE — service-enforced).
 - [ ] Implement; commit `feat(migrations): 0010 misc`.
 
-### Task 10j — `0011_admin.sql` — attachments, settings, users, RBAC, audit
-**Tables (`data-model.md §18`):** `attachment`, `app_setting`, `device_setting` (LOCAL), `user`, `role`, `permission`, `role_permission`, `user_role`, `audit_log` (LOG).
-- [ ] Failing test `test_schema_admin`: `attachment.owner_type_code TEXT NOT NULL DEFAULT ''` + `owner_id BLOB DEFAULT NULL` (polymorphic owner, no FK); `device_setting` is `-- sync: LOCAL`; `permission.key TEXT NOT NULL DEFAULT ''`; `role_permission` composite PK `(role_id, permission_id)`; `user_role` composite PK `(user_id, role_id)`; `audit_log` is LOG-shaped (`user_id BLOB DEFAULT NULL`, `action_code TEXT NOT NULL DEFAULT ''`, `at INTEGER NOT NULL DEFAULT 0`).
+### Task 10j — `0011_admin.sql` — attachments, settings, users, RBAC
+**Tables (`data-model.md §18`):** `attachment`, `app_setting`, `device_setting` (LOCAL), `user`, `role`, `permission`, `role_permission`, `user_role`.
+- [ ] Failing test `test_schema_admin`: `attachment.file_type_code TEXT NOT NULL DEFAULT ''`; `item_attachment` composite PK `(item_id, attachment_id)`; `invoice_attachment` composite PK `(invoice_id, attachment_id)`; `device_setting` is `-- sync: LOCAL`; `permission.key TEXT NOT NULL DEFAULT ''`; `role_permission` composite PK `(role_id, permission_id)`; `user_role` composite PK `(user_id, role_id)`.
 - [ ] Implement; commit `feat(migrations): 0011 admin`.
 
 ### Task 10k — `0012_local_read_models.sql` — LOCAL read-model tables + FTS5
@@ -427,7 +427,7 @@ Entity lists come **verbatim** from `data-model.md`. If a section adds/removes e
 - [ ] **Task 11k — `models/invoice/`** (§13): `Invoice`, `InvoiceLine` (`qty: ScaledValue` at scale 6; `unit_price: Money | None`), `ImportTemplate` (`mapping: str` — JSON column stored as TEXT; field is `mapping`, not `template_json`). Commit `feat(models): invoice entities`.
 - [ ] **Task 11l — `models/bom/`** (§16): `Bom`, `BomRevision`, `BomLine` (`qty_per: ScaledValue` at scale 6), `BomLineSubstitute` (junction), `Build`. Commit `feat(models): BOM & build entities`.
 - [ ] **Task 11m — `models/misc/`** (§17): `Tag`, `ItemTag` (junction), `AttributeFormula`, `FormulaInput` (`layer_code: str`), `FormulaCategory` (junction: `formula_id` + `category_id`), `LtspiceTemplate`, `LtspiceTemplateParam`, `DatasheetExtraction`. Commit `feat(models): misc entities`.
-- [ ] **Task 11n — `models/admin/`** (§15 + §18): `Location` (§15 — self-referencing `parent_id: UUIDv7 | None`), `Attachment` (§18 — polymorphic owner: `owner_type_code: str` + `owner_id: UUIDv7 | None`), `AppSetting`, `DeviceSetting`, `User`, `Role`, `Permission`, `RolePermission` (junction), `UserRole` (junction), `AuditLog` (LOG; `user_id`). Commit `feat(models): location, admin & RBAC entities`.
+- [ ] **Task 11n — `models/admin/`** (§15 + §18): `Location` (§15 — self-referencing `parent_id: UUIDv7 | None`), `Attachment` (§18 — no owner fields), `ItemAttachment` (junction), `InvoiceAttachment` (junction), `AppSetting`, `DeviceSetting`, `User`, `Role`, `Permission`, `RolePermission` (junction), `UserRole` (junction). Commit `feat(models): location, admin & RBAC entities`.
 - [ ] **Task 11o — `models/readmodel/`** (LOCAL read-model projections — distinct from write aggregates): `RmItemStock`, `RmStockByLocation`, `RmInstanceState`, `RmThumbnail`. These are **projection read models** (`architecture.md §4.4`), not write aggregates; they have no attribution columns and no soft-delete. Quantities use `ScaledValue` at scale 6. Commit `feat(models): LOCAL read-model projections`.
 
 - [x] **Task 11-final — `CodeRow`** (`src/thinghound/models/code_row.py`): a tiny shared model `CodeRow(code: str, name: str, description: str | None = None)` used by every REF code table the registry loads. One failing test, implement, commit `feat(models): shared CodeRow`.
