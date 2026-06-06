@@ -10,17 +10,16 @@
   --row-height: 22px;
   --cell-pad-x: 6px;
   --cell-pad-y: 2px;
-  --toolbar-height: 32px;
-  --pane-toolbar-height: 26px;
-  --filter-height: 152px;
+  --toolbar-height: 30px;
+  --pane-toolbar-height: 24px;
+  --pane-header-height: 22px;
+  --filter-height: 96px;
   --left-width: 240px;
   --right-width: 320px;
   --sash-size: 4px;
   --status-height: 22px;
-  --pane-radius: 4px;
-  --button-radius: 3px;
 
-  --inspector-title-size: 17px;
+  --inspector-title-size: 16px;
   --inspector-subtitle-size: 12px;
 
   --font-stack: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
@@ -28,55 +27,61 @@
 }
 
 [data-theme="dark"] {
-  --bg: #0f141b;
-  --bg-2: #141a23;
-  --panel: #1a2230;
-  --panel-2: #202a3a;
-  --panel-3: #25324a;
+  --bg: #0c1219;
+  --bg-2: #0a0e15;
+  --panel: #161e2a;
+  --panel-2: #1c2632;
+  --panel-3: #243042;
   --line: #2b3749;
-  --line-2: #36445a;
-  --text: #dfe6f1;
-  --muted: #93a3b9;
-  --accent: #6ea2ff;
-  --accent-2: #4a7bcf;
-  --selection: #1f3a5f;
-  --strip: rgba(255, 255, 255, 0.025);
-  --shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  --line-2: #38465c;
+  --text: #e0e7f1;
+  --muted: #8597b3;
+  --accent: #5a8ed6;
+  --accent-2: #3d6cae;
+  --accent-text: #ffffff;
+  --brand: #2c4a73;
+  --brand-2: #1d365a;
+  --selection: #274a78;
+  --strip: rgba(255, 255, 255, 0.03);
   --tabulator-bg: #1a2230;
   --tabulator-header-bg: #1f2935;
-  --tabulator-cell-bg: transparent;
+  --tabulator-row-bg: #1a2230;
+  --tabulator-row-strip-bg: #1f2935;
   --tabulator-border: #2b3749;
-  --tabulator-text: #dfe6f1;
+  --tabulator-text: #e0e7f1;
   --tabulator-group-bg: transparent;
   --tabulator-group-border: #2b3749;
-  --tabulator-row-hover: #25324a;
-  --tabulator-selected: #1f3a5f;
+  --tabulator-row-hover: #243042;
+  --tabulator-selected: #274a78;
 }
 
 [data-theme="light"] {
-  --bg: #d8e0ec;
-  --bg-2: #e3eaf3;
-  --panel: #eef3fa;
-  --panel-2: #f5f9fe;
+  --bg: #c4d2e3;
+  --bg-2: #aec2da;
+  --panel: #dee8f3;
+  --panel-2: #cfdcec;
   --panel-3: #ffffff;
-  --line: #b8c4d4;
-  --line-2: #c9d3e0;
-  --text: #1d2c40;
-  --muted: #5e7388;
-  --accent: #2c66c4;
-  --accent-2: #1f4f9c;
-  --selection: #d3e1f5;
-  --strip: rgba(0, 0, 0, 0.03);
-  --shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
-  --tabulator-bg: #eef3fa;
-  --tabulator-header-bg: #e3eaf3;
-  --tabulator-cell-bg: transparent;
-  --tabulator-border: #c9d3e0;
-  --tabulator-text: #1d2c40;
+  --line: #8aa2c2;
+  --line-2: #a4b6d2;
+  --text: #0f1e34;
+  --muted: #3f5575;
+  --accent: #2c5aa0;
+  --accent-2: #1e4485;
+  --accent-text: #ffffff;
+  --brand: #2c5aa0;
+  --brand-2: #1e4485;
+  --selection: #6c97cf;
+  --strip: rgba(0, 0, 0, 0.04);
+  --tabulator-bg: #ffffff;
+  --tabulator-header-bg: #d3deec;
+  --tabulator-row-bg: #ffffff;
+  --tabulator-row-strip-bg: #ebf1f8;
+  --tabulator-border: #a4b6d2;
+  --tabulator-text: #0f1e34;
   --tabulator-group-bg: transparent;
-  --tabulator-group-border: #c9d3e0;
-  --tabulator-row-hover: #d3e1f5;
-  --tabulator-selected: #c2d4ee;
+  --tabulator-group-border: #a4b6d2;
+  --tabulator-row-hover: #d8e3f1;
+  --tabulator-selected: #c0d4ee;
 }
 
 * {
@@ -130,12 +135,20 @@ textarea {
   gap: 12px;
 }
 
+.toolbar-global {
+  background: linear-gradient(to bottom, var(--brand) 0%, var(--brand-2) 100%);
+  color: var(--accent-text);
+  border-bottom: 1px solid var(--brand-2);
+  padding: 0 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .toolbar-brand {
-  font-weight: 700;
   font-size: 12px;
-  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  letter-spacing: 0.06em;
+  color: inherit;
 }
 
 .toolbar-actions {
@@ -145,14 +158,26 @@ textarea {
 }
 
 .toolbar-btn {
-  background: var(--panel-3);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--button-radius);
-  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  padding: 2px 10px;
   font-size: var(--data-font-size);
   cursor: pointer;
   min-height: 20px;
+  font-weight: 500;
+}
+
+.toolbar-global .toolbar-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.toolbar-global .toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .toolbar-btn:hover {
@@ -167,6 +192,7 @@ textarea {
   color: var(--muted);
   min-height: var(--status-height);
   padding: 0 10px;
+  font-size: var(--data-font-size);
 }
 
 .workspace {
@@ -191,9 +217,10 @@ textarea {
   grid-column: 3;
   display: grid;
   position: relative;
-  grid-template-rows: var(--pane-toolbar-height) minmax(160px, 1fr) var(--sash-size) var(--filter-height);
+  grid-template-rows: var(--pane-header-height) var(--pane-toolbar-height) minmax(160px, 1fr) var(--sash-size) var(--filter-height);
   gap: 0;
   background: transparent;
+  border: 1px solid var(--line);
 }
 
 .sash-right {
@@ -282,6 +309,35 @@ textarea {
   height: 16px;
 }
 
+/* ----------------------- Pane headers (tab-like) ----------------------- */
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  height: var(--pane-header-height);
+  padding: 0 10px;
+  background: linear-gradient(to bottom, var(--panel-2) 0%, var(--panel) 100%);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--data-font-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.pane-header .pane-header-name {
+  flex: 1 1 auto;
+}
+
+.pane-header .pane-header-actions {
+  display: flex;
+  gap: 6px;
+  text-transform: none;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
 /* ----------------------- Pane-local toolbars ----------------------- */
 
 .pane-toolbar {
@@ -299,7 +355,7 @@ textarea {
   background: transparent;
   color: var(--text);
   border: 1px solid transparent;
-  border-radius: var(--button-radius);
+  border-radius: 3px;
   padding: 1px 6px;
   font-size: var(--data-font-size);
   cursor: pointer;
@@ -331,7 +387,7 @@ textarea {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: var(--button-radius);
+  border-radius: 3px;
   padding: 1px 4px;
   height: 18px;
   font-size: var(--data-font-size);
@@ -366,7 +422,7 @@ textarea {
 }
 
 .tree-row:hover {
-  background: var(--panel-2);
+  background: var(--selection);
 }
 
 .tree-chevron {
@@ -394,15 +450,39 @@ textarea {
 
 .filter-region {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 8px;
-  background: var(--panel-2);
+  flex-direction: column;
+  padding: 0;
+  background: var(--panel);
   border-top: 1px solid var(--line);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   flex: 0 0 auto;
   height: var(--filter-height);
+}
+
+.filter-header {
+  display: flex;
+  align-items: center;
+  height: var(--pane-toolbar-height);
+  padding: 0 10px;
+  background: linear-gradient(to bottom, var(--panel-2) 0%, var(--panel) 100%);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--data-font-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.filter-body {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 6px 10px;
+  background: var(--panel);
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .filter-control {
@@ -415,25 +495,32 @@ textarea {
 
 .filter-control-label {
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .filter-control input,
 .filter-control select {
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: var(--button-radius);
+  border-radius: 3px;
   padding: 1px 4px;
   height: 20px;
   font-size: var(--data-font-size);
-  min-width: 90px;
+  min-width: 100px;
+}
+
+.filter-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
 }
 
 .filter-add-chip {
   background: transparent;
   color: var(--text);
   border: 1px dashed var(--line-2);
-  border-radius: var(--button-radius);
+  border-radius: 3px;
   padding: 1px 8px;
   font-size: var(--data-font-size);
   cursor: pointer;
@@ -468,84 +555,94 @@ textarea {
   flex: 1 1 auto;
   background: var(--tabulator-bg);
   border-bottom: 0;
+  border-top: 0;
   overflow: hidden;
 }
 
-/* Tabulator surface overrides — apply in both themes */
+/* Tabulator surface — hard overrides so midnight CSS does not bleed through */
+
+.tabulator,
+.tabulator .tabulator-tableholder,
+.tabulator .tabulator-table {
+  background: var(--tabulator-bg) !important;
+  color: var(--tabulator-text) !important;
+}
+
 .tabulator {
-  background: var(--tabulator-bg);
-  color: var(--tabulator-text);
-  font-size: var(--data-font-size);
-  border: 0;
-  font-family: var(--font-stack);
+  font-size: var(--data-font-size) !important;
+  font-family: var(--font-stack) !important;
+  border: 0 !important;
 }
 
 .tabulator .tabulator-header {
-  background: var(--tabulator-header-bg);
-  border-bottom: 1px solid var(--tabulator-border);
-  color: var(--tabulator-text);
-  font-size: var(--data-font-size);
-  font-weight: 600;
+  background: var(--tabulator-header-bg) !important;
+  border-bottom: 1px solid var(--tabulator-border) !important;
+  color: var(--tabulator-text) !important;
+  font-size: var(--data-font-size) !important;
+  font-weight: 600 !important;
 }
 
 .tabulator .tabulator-header .tabulator-col {
-  background: transparent;
-  border-right: 1px solid var(--tabulator-border);
-  min-height: var(--row-height);
-  padding: 0 6px;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--tabulator-text);
+  background: var(--tabulator-header-bg) !important;
+  border-right: 1px solid var(--tabulator-border) !important;
+  min-height: var(--row-height) !important;
+  padding: 0 6px !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  color: var(--tabulator-text) !important;
 }
 
 .tabulator .tabulator-header .tabulator-col:last-child {
-  border-right: 0;
+  border-right: 0 !important;
 }
 
 .tabulator .tabulator-header .tabulator-col .tabulator-col-content {
-  padding: 0;
-  line-height: var(--row-height);
+  padding: 0 !important;
+  line-height: var(--row-height) !important;
 }
 
 .tabulator .tabulator-header .tabulator-col .tabulator-col-sorter {
-  right: 2px;
-  top: 0;
-  height: var(--row-height);
+  right: 2px !important;
+  top: 0 !important;
+  height: var(--row-height) !important;
 }
 
-.tabulator .tabulator-row {
-  background: var(--tabulator-cell-bg);
-  border-bottom: 1px solid var(--tabulator-border);
-  min-height: var(--row-height);
-  color: var(--tabulator-text);
+.tabulator .tabulator-row,
+.tabulator .tabulator-row.tabulator-row-odd,
+.tabulator .tabulator-row.tabulator-row-even {
+  background: var(--tabulator-row-bg) !important;
+  border-bottom: 1px solid var(--tabulator-border) !important;
+  min-height: var(--row-height) !important;
+  color: var(--tabulator-text) !important;
 }
 
-.tabulator .tabulator-row:nth-child(even) {
-  background: var(--strip);
+.tabulator .tabulator-row.tabulator-row-even {
+  background: var(--tabulator-row-strip-bg) !important;
 }
 
 .tabulator .tabulator-row:hover {
-  background: var(--tabulator-row-hover);
+  background: var(--tabulator-row-hover) !important;
 }
 
 .tabulator .tabulator-row.tabulator-selected {
   background: var(--tabulator-selected) !important;
-  color: var(--tabulator-text);
+  color: var(--tabulator-text) !important;
 }
 
 .tabulator .tabulator-row .tabulator-cell {
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-right: 0;
-  line-height: calc(var(--row-height) - var(--cell-pad-y) * 2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: var(--data-font-size);
+  padding: var(--cell-pad-y) var(--cell-pad-x) !important;
+  border-right: 0 !important;
+  line-height: calc(var(--row-height) - var(--cell-pad-y) * 2) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  font-size: var(--data-font-size) !important;
+  color: var(--tabulator-text) !important;
 }
 
 .tabulator .tabulator-row .tabulator-cell:last-child {
-  border-right: 0;
+  border-right: 0 !important;
 }
 
 .tabulator .tabulator-group {
@@ -553,38 +650,49 @@ textarea {
   border-top: 1px solid var(--tabulator-group-border) !important;
   border-bottom: 1px solid var(--tabulator-group-border) !important;
   color: var(--muted) !important;
-  font-size: var(--data-font-size);
-  font-weight: 600;
-  padding: 2px 8px;
-  min-height: 18px;
-  box-sizing: border-box;
+  font-size: var(--data-font-size) !important;
+  font-weight: 600 !important;
+  padding: 2px 8px !important;
+  min-height: 20px !important;
+  box-sizing: border-box !important;
 }
 
 .tabulator .tabulator-group .tabulator-group-label {
-  color: var(--muted);
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: var(--data-font-size);
+  color: var(--muted) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: var(--data-font-size) !important;
 }
 
 .tabulator .tabulator-group .tabulator-arrow {
-  display: inline-block;
-  margin-right: 4px;
-  color: var(--muted);
+  display: inline-block !important;
+  margin-right: 4px !important;
+  color: var(--muted) !important;
+}
+
+.tabulator .tabulator-group .group-path {
+  color: var(--text) !important;
+  font-weight: 600 !important;
+}
+
+.tabulator .tabulator-group .group-count {
+  color: var(--muted) !important;
+  font-weight: 400 !important;
+  margin-left: 4px !important;
+}
+
+.tabulator .tabulator-footer {
+  background: var(--tabulator-header-bg) !important;
+  color: var(--muted) !important;
+  font-size: var(--data-font-size) !important;
+  border-top: 1px solid var(--tabulator-border) !important;
+  min-height: 22px !important;
+  padding: 0 8px !important;
 }
 
 .tabulator-row .tabulator-cell.tabulator-editing,
 .tabulator-cell.tabulator-editable {
-  outline: 1px solid var(--accent);
-}
-
-.tabulator .tabulator-footer {
-  background: var(--tabulator-header-bg);
-  color: var(--muted);
-  font-size: var(--data-font-size);
-  border-top: 1px solid var(--tabulator-border);
-  min-height: 22px;
-  padding: 0 8px;
+  outline: 1px solid var(--accent) !important;
 }
 
 /* ----------------------- Inspector (right pane) ----------------------- */

@@ -22,11 +22,18 @@
       </header>
       <main class="workspace" id="workspace">
         <aside class="pane pane-left" id="pane-left">
+          <div class="pane-header">
+            <span class="pane-header-name">Categories</span>
+          </div>
           <div class="pane-toolbar" data-pane-toolbar="tree"></div>
           <div class="pane-body tree-region" id="tree-region"></div>
         </aside>
         <div class="sash sash-left" data-sash="left"></div>
         <section class="pane pane-center" id="pane-center">
+          <div class="pane-header">
+            <span class="pane-header-name">Parts List</span>
+            <span class="pane-header-actions" data-pane-header-actions="grid"></span>
+          </div>
           <div class="pane-toolbar" data-pane-toolbar="grid"></div>
           <div class="grid-region" id="grid-region"></div>
           <div class="sash sash-bottom" data-sash="bottom"></div>
@@ -34,6 +41,9 @@
         </section>
         <div class="sash sash-right" data-sash="right"></div>
         <aside class="pane pane-right" id="pane-right">
+          <div class="pane-header">
+            <span class="pane-header-name">Part Details</span>
+          </div>
           <div class="pane-toolbar" data-pane-toolbar="inspector"></div>
           <div class="pane-body inspector-region" id="inspector-region"></div>
         </aside>

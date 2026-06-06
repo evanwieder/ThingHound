@@ -45,11 +45,25 @@ export function buildColumns(displayColumns) {
       formatter: "plaintext"
     }
   ];
-  const dynamic = displayColumns.map((column) => ({
-    title: column.title,
-    field: column.key,
-    headerSort: true
-  }));
+  const dynamic = displayColumns.map((column) => {
+    if (column.key === "stock") {
+      return {
+        title: column.title,
+        field: column.key,
+        headerSort: true,
+        hozAlign: "right",
+        formatter: (cell) => {
+          const value = cell.getValue();
+          return value === "" || value == null ? "" : `${value} pcs`;
+        }
+      };
+    }
+    return {
+      title: column.title,
+      field: column.key,
+      headerSort: true
+    };
+  });
   return [...base, ...dynamic];
 }
 
