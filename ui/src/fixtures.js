@@ -14,6 +14,39 @@ export const columnMappings = {
   mechanical: { stock: "qty_available", footprint: "nominal_footprint" }
 };
 
+export const attributesByCategory = {
+  Resistors: [
+    { name: "Resistance", value: "1 kΩ" },
+    { name: "Tolerance", value: "±1%" },
+    { name: "Power Rating", value: "1/10 W" },
+    { name: "Voltage Rating (DC)", value: "75 V" }
+  ],
+  Capacitors: [
+    { name: "Capacitance", value: "100 nF" },
+    { name: "Voltage Rating (DC)", value: "50 V" },
+    { name: "Dielectric", value: "X7R" },
+    { name: "Tolerance", value: "±10%" }
+  ],
+  MOSFET: [
+    { name: "Polarity", value: "N-Channel" },
+    { name: "Drain-Source Voltage (Vds)", value: "60 V" },
+    { name: "Continuous Drain Current", value: "200 mA" },
+    { name: "On Resistance (Rds on)", value: "5 Ω" }
+  ],
+  Connectors: [
+    { name: "Pitch", value: "2.54 mm" },
+    { name: "Pin Count", value: "2" },
+    { name: "Mounting Style", value: "Through Hole" },
+    { name: "Orientation", value: "Vertical" }
+  ],
+  Mechanical: [
+    { name: "Thread", value: "M3" },
+    { name: "Length", value: "12 mm" },
+    { name: "Head Style", value: "Pan Head" },
+    { name: "Material", value: "Stainless A2" }
+  ]
+};
+
 export const gridRows = [
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -24,9 +57,13 @@ export const gridRows = [
     stock: "250",
     status: "Active",
     footprint: "0603",
+    stock_mode: "Bulk",
+    instance_kind: "Lot",
+    markings: "102",
     category: "Resistors",
     category_path: ["root", "passive", "resistors"],
-    category_path_display: "All Categories > Passive > Resistors"
+    category_path_display: "All Categories > Passive > Resistors",
+    attributes: attributesByCategory.Resistors
   },
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAW",
@@ -37,9 +74,13 @@ export const gridRows = [
     stock: "0",
     status: "Active",
     footprint: "0603",
+    stock_mode: "Bulk",
+    instance_kind: "Lot",
+    markings: "103",
     category: "Resistors",
     category_path: ["root", "passive", "resistors"],
-    category_path_display: "All Categories > Passive > Resistors"
+    category_path_display: "All Categories > Passive > Resistors",
+    attributes: attributesByCategory.Resistors
   },
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAX",
@@ -50,9 +91,13 @@ export const gridRows = [
     stock: "500",
     status: "Active",
     footprint: "0603",
+    stock_mode: "Bulk",
+    instance_kind: "Lot",
+    markings: "104",
     category: "Capacitors",
     category_path: ["root", "passive", "capacitors"],
-    category_path_display: "All Categories > Passive > Capacitors"
+    category_path_display: "All Categories > Passive > Capacitors",
+    attributes: attributesByCategory.Capacitors
   },
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FB1",
@@ -63,9 +108,13 @@ export const gridRows = [
     stock: "120",
     status: "Active",
     footprint: "0805",
+    stock_mode: "Bulk",
+    instance_kind: "Lot",
+    markings: "106",
     category: "Capacitors",
     category_path: ["root", "passive", "capacitors"],
-    category_path_display: "All Categories > Passive > Capacitors"
+    category_path_display: "All Categories > Passive > Capacitors",
+    attributes: attributesByCategory.Capacitors
   },
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FB2",
@@ -76,9 +125,13 @@ export const gridRows = [
     stock: "23",
     status: "Active",
     footprint: "TO-92",
+    stock_mode: "Instance",
+    instance_kind: "Serial",
+    markings: "2N7000",
     category: "MOSFET",
     category_path: ["root", "active", "semiconductors", "transistors", "mosfet"],
-    category_path_display: "All Categories > Active > Semiconductors > Transistors > MOSFET"
+    category_path_display: "All Categories > Active > Semiconductors > Transistors > MOSFET",
+    attributes: attributesByCategory.MOSFET
   },
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FB3",
@@ -89,9 +142,13 @@ export const gridRows = [
     stock: "6",
     status: "NRND",
     footprint: "TO-220",
+    stock_mode: "Instance",
+    instance_kind: "Serial",
+    markings: "IRFZ44N",
     category: "MOSFET",
     category_path: ["root", "active", "semiconductors", "transistors", "mosfet"],
-    category_path_display: "All Categories > Active > Semiconductors > Transistors > MOSFET"
+    category_path_display: "All Categories > Active > Semiconductors > Transistors > MOSFET",
+    attributes: attributesByCategory.MOSFET
   },
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FB4",
@@ -102,9 +159,13 @@ export const gridRows = [
     stock: "48",
     status: "Active",
     footprint: "TH-2.54",
+    stock_mode: "Bulk",
+    instance_kind: "Lot",
+    markings: "",
     category: "Connectors",
     category_path: ["root", "electromechanical", "connectors"],
-    category_path_display: "All Categories > Electromechanical > Connectors"
+    category_path_display: "All Categories > Electromechanical > Connectors",
+    attributes: attributesByCategory.Connectors
   },
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FB5",
@@ -115,9 +176,13 @@ export const gridRows = [
     stock: "36",
     status: "Active",
     footprint: "TH-2.54",
+    stock_mode: "Bulk",
+    instance_kind: "Lot",
+    markings: "",
     category: "Connectors",
     category_path: ["root", "electromechanical", "connectors"],
-    category_path_display: "All Categories > Electromechanical > Connectors"
+    category_path_display: "All Categories > Electromechanical > Connectors",
+    attributes: attributesByCategory.Connectors
   },
   {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FB6",
@@ -128,9 +193,13 @@ export const gridRows = [
     stock: "900",
     status: "Active",
     footprint: "M3",
+    stock_mode: "Bulk",
+    instance_kind: "Lot",
+    markings: "",
     category: "Mechanical",
     category_path: ["root", "mechanical"],
-    category_path_display: "All Categories > Mechanical"
+    category_path_display: "All Categories > Mechanical",
+    attributes: attributesByCategory.Mechanical
   }
 ];
 
@@ -184,11 +253,10 @@ export const categoryTree = [
 ];
 
 export const inspectorTabs = [
-  "Attributes",
-  "Stock & Events",
-  "Instances",
+  "Part Details",
+  "Stock History",
+  "Parameters",
   "Vendors",
   "Alternates",
-  "BOM/Where-used",
-  "Simulation"
+  "BOM/Where-used"
 ];

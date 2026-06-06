@@ -107,7 +107,7 @@ class Bridge:
         return {"rows": rows, "total": len(rows)}
 
     def _mock_get_inspector_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Return summary and tab payload for selected item."""
+        """Return summary, properties, and tab payload for selected item."""
         item_id = payload.get("itemId")
         for row in fixtures.GRID_ROWS:
             if row["id"] == item_id:
@@ -122,6 +122,21 @@ class Bridge:
                         "part_number": row["part_number"],
                         "description": row["description"],
                     },
+                    "properties": {
+                        "Internal ID": row["sku"],
+                        "Name": row["name"],
+                        "SKU": row["sku"],
+                        "Part Number": row["part_number"],
+                        "Category": row["category"],
+                        "Description": row["description"],
+                        "Footprint": row["footprint"],
+                        "Status": row["status"],
+                        "Stock Level": row["stock"],
+                        "Stock Mode": row["stock_mode"],
+                        "Instance Kind": row["instance_kind"],
+                        "Markings": row["markings"] or "—",
+                    },
+                    "attributes": row.get("attributes", []),
                     "tabs": {
                         tab: {"content": f"{tab} fixture content for {row['name']}"}
                         for tab in fixtures.INSPECTOR_TABS

@@ -743,6 +743,76 @@ textarea {
   padding-top: 2px;
 }
 
+.inspector-section {
+  display: flex;
+  align-items: center;
+  height: var(--pane-toolbar-height);
+  padding: 0 10px;
+  background: linear-gradient(to bottom, var(--panel-2) 0%, var(--panel) 100%);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--data-font-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.inspector-properties {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--data-font-size);
+  color: var(--text);
+  background: var(--panel);
+}
+
+.inspector-property {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  border-bottom: 1px solid var(--line);
+}
+
+.inspector-property:nth-child(even) {
+  background: var(--strip);
+}
+
+.inspector-property-label {
+  padding: 3px 8px;
+  color: var(--muted);
+  font-weight: 500;
+  background: var(--panel-2);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inspector-property-value {
+  padding: 3px 8px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inspector-tab-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+
+.inspector-tab-panel.is-collapsed {
+  display: none;
+}
+
+.inspector-placeholder {
+  padding: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
 .inspector-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -777,15 +847,6 @@ textarea {
 .inspector-content {
   flex: 1 1 auto;
   overflow: auto;
-  padding: 8px 10px;
   font-size: var(--data-font-size);
   color: var(--text);
-}
-
-.inspector-content div {
-  display: block;
-}
-
-.inspector-content div.is-collapsed {
-  display: none;
 }

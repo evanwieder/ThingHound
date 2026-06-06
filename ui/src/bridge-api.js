@@ -81,9 +81,24 @@ export function createBridgeApi(pywebviewApi) {
           part_number: row?.part_number ?? "",
           description: row?.description ?? "",
         },
+        properties: {
+          "Internal ID": row?.sku ?? "",
+          Name: row?.name ?? "",
+          SKU: row?.sku ?? "",
+          "Part Number": row?.part_number ?? "",
+          Category: row?.category ?? "",
+          Description: row?.description ?? "",
+          Footprint: row?.footprint ?? "",
+          Status: row?.status ?? "",
+          "Stock Level": row?.stock ?? "",
+          "Stock Mode": row?.stock_mode ?? "",
+          "Instance Kind": row?.instance_kind ?? "",
+          Markings: row?.markings || "—"
+        },
+        attributes: row?.attributes ?? [],
         tabs: Object.fromEntries(
-          inspectorTabs.map((tab) => [tab, { content: `${tab} fixture content for ${row?.name ?? "item"}` }]),
-        ),
+          inspectorTabs.map((tab) => [tab, { content: `${tab} fixture content for ${row?.name ?? "item"}` }])
+        )
       };
     },
   };
