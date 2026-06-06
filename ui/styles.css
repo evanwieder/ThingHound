@@ -1,0 +1,683 @@
+/* ---------------------------------------------------------------------------
+   ThingHound — compact workspace stylesheet
+   Source of truth for theme tokens, dense sizing, and component rules.
+   Mirrored into ui/dist/styles.css by the build.
+   --------------------------------------------------------------------------- */
+
+:root {
+  --data-font-size: 11px;
+  --data-line-height: 1.3;
+  --row-height: 22px;
+  --cell-pad-x: 6px;
+  --cell-pad-y: 2px;
+  --toolbar-height: 32px;
+  --pane-toolbar-height: 26px;
+  --filter-height: 152px;
+  --left-width: 240px;
+  --right-width: 320px;
+  --sash-size: 4px;
+  --status-height: 22px;
+  --pane-radius: 4px;
+  --button-radius: 3px;
+
+  --inspector-title-size: 17px;
+  --inspector-subtitle-size: 12px;
+
+  --font-stack: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono-stack: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+[data-theme="dark"] {
+  --bg: #0f141b;
+  --bg-2: #141a23;
+  --panel: #1a2230;
+  --panel-2: #202a3a;
+  --panel-3: #25324a;
+  --line: #2b3749;
+  --line-2: #36445a;
+  --text: #dfe6f1;
+  --muted: #93a3b9;
+  --accent: #6ea2ff;
+  --accent-2: #4a7bcf;
+  --selection: #1f3a5f;
+  --strip: rgba(255, 255, 255, 0.025);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  --tabulator-bg: #1a2230;
+  --tabulator-header-bg: #1f2935;
+  --tabulator-cell-bg: transparent;
+  --tabulator-border: #2b3749;
+  --tabulator-text: #dfe6f1;
+  --tabulator-group-bg: transparent;
+  --tabulator-group-border: #2b3749;
+  --tabulator-row-hover: #25324a;
+  --tabulator-selected: #1f3a5f;
+}
+
+[data-theme="light"] {
+  --bg: #d8e0ec;
+  --bg-2: #e3eaf3;
+  --panel: #eef3fa;
+  --panel-2: #f5f9fe;
+  --panel-3: #ffffff;
+  --line: #b8c4d4;
+  --line-2: #c9d3e0;
+  --text: #1d2c40;
+  --muted: #5e7388;
+  --accent: #2c66c4;
+  --accent-2: #1f4f9c;
+  --selection: #d3e1f5;
+  --strip: rgba(0, 0, 0, 0.03);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+  --tabulator-bg: #eef3fa;
+  --tabulator-header-bg: #e3eaf3;
+  --tabulator-cell-bg: transparent;
+  --tabulator-border: #c9d3e0;
+  --tabulator-text: #1d2c40;
+  --tabulator-group-bg: transparent;
+  --tabulator-group-border: #c9d3e0;
+  --tabulator-row-hover: #d3e1f5;
+  --tabulator-selected: #c2d4ee;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-stack);
+  font-size: var(--data-font-size);
+  line-height: var(--data-line-height);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* ----------------------- Layout chrome ----------------------- */
+
+.layout-root {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: var(--toolbar-height) minmax(0, 1fr) var(--status-height);
+  background: var(--bg);
+}
+
+.toolbar,
+.status-bar {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  min-height: var(--toolbar-height);
+}
+
+.toolbar {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toolbar-brand {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.toolbar-btn {
+  background: var(--panel-3);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--button-radius);
+  padding: 2px 8px;
+  font-size: var(--data-font-size);
+  cursor: pointer;
+  min-height: 20px;
+}
+
+.toolbar-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent-2);
+  color: #fff;
+}
+
+.status-bar {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  min-height: var(--status-height);
+  padding: 0 10px;
+}
+
+.workspace {
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  position: relative;
+  grid-template-columns: var(--left-width) var(--sash-size) minmax(320px, 1fr) var(--sash-size) var(--right-width);
+  gap: 0;
+  background: var(--bg);
+}
+
+.pane-left {
+  grid-column: 1;
+}
+
+.sash-left {
+  grid-column: 2;
+}
+
+.pane-center {
+  grid-column: 3;
+  display: grid;
+  position: relative;
+  grid-template-rows: var(--pane-toolbar-height) minmax(160px, 1fr) var(--sash-size) var(--filter-height);
+  gap: 0;
+  background: transparent;
+}
+
+.sash-right {
+  grid-column: 4;
+}
+
+.pane-right {
+  grid-column: 5;
+}
+
+.pane,
+.grid-region,
+.filter-region {
+  min-height: 0;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-left,
+.pane-right {
+  display: flex;
+  flex-direction: column;
+}
+
+.sash {
+  background: var(--bg-2);
+  transition: background 0.15s ease;
+}
+
+.sash:hover {
+  background: var(--accent);
+}
+
+.sash-left,
+.sash-right {
+  cursor: col-resize;
+}
+
+.sash-bottom {
+  cursor: row-resize;
+}
+
+.is-collapsed {
+  display: none !important;
+}
+
+.restore-bar {
+  background: var(--panel-3);
+  color: var(--text);
+  font-size: var(--data-font-size);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  padding: 0;
+}
+
+.restore-left,
+.restore-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  opacity: 0.95;
+}
+
+.restore-left {
+  left: 0;
+}
+
+.restore-right {
+  right: 0;
+}
+
+.restore-filter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 16px;
+}
+
+/* ----------------------- Pane-local toolbars ----------------------- */
+
+.pane-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--pane-toolbar-height);
+  padding: 0 8px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.pane-toolbar-btn {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: var(--button-radius);
+  padding: 1px 6px;
+  font-size: var(--data-font-size);
+  cursor: pointer;
+  min-height: 18px;
+  line-height: 1.2;
+}
+
+.pane-toolbar-btn:hover {
+  background: var(--panel-3);
+  border-color: var(--line);
+}
+
+.pane-toolbar-select,
+.pane-toolbar-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--data-font-size);
+  color: var(--muted);
+}
+
+.pane-toolbar-label {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pane-toolbar-select select,
+.pane-toolbar-search input {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--button-radius);
+  padding: 1px 4px;
+  height: 18px;
+  font-size: var(--data-font-size);
+  min-width: 80px;
+}
+
+.pane-toolbar-search input {
+  min-width: 120px;
+}
+
+/* ----------------------- Tree (left pane) ----------------------- */
+
+.tree-region {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 4px 0;
+  background: var(--panel);
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px 1px 0;
+  cursor: pointer;
+  font-size: var(--data-font-size);
+  line-height: 1.4;
+  color: var(--text);
+  white-space: nowrap;
+  user-select: none;
+  padding-left: calc(var(--tree-depth, 0) * 10px + 4px);
+}
+
+.tree-row:hover {
+  background: var(--panel-2);
+}
+
+.tree-chevron {
+  display: inline-flex;
+  width: 12px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 10px;
+  flex: 0 0 auto;
+}
+
+.tree-chevron-leaf {
+  color: var(--line-2);
+}
+
+.tree-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ----------------------- Filter strip ----------------------- */
+
+.filter-region {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  background: var(--panel-2);
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 0 0 auto;
+  height: var(--filter-height);
+}
+
+.filter-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--data-font-size);
+  color: var(--muted);
+}
+
+.filter-control-label {
+  color: var(--muted);
+}
+
+.filter-control input,
+.filter-control select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--button-radius);
+  padding: 1px 4px;
+  height: 20px;
+  font-size: var(--data-font-size);
+  min-width: 90px;
+}
+
+.filter-add-chip {
+  background: transparent;
+  color: var(--text);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--button-radius);
+  padding: 1px 8px;
+  font-size: var(--data-font-size);
+  cursor: pointer;
+  height: 20px;
+}
+
+.filter-add-chip:hover {
+  background: var(--panel-3);
+}
+
+.filter-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chip {
+  background: var(--panel-3);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 8px;
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* ----------------------- Grid (center pane) ----------------------- */
+
+.grid-region {
+  flex: 1 1 auto;
+  background: var(--tabulator-bg);
+  border-bottom: 0;
+  overflow: hidden;
+}
+
+/* Tabulator surface overrides — apply in both themes */
+.tabulator {
+  background: var(--tabulator-bg);
+  color: var(--tabulator-text);
+  font-size: var(--data-font-size);
+  border: 0;
+  font-family: var(--font-stack);
+}
+
+.tabulator .tabulator-header {
+  background: var(--tabulator-header-bg);
+  border-bottom: 1px solid var(--tabulator-border);
+  color: var(--tabulator-text);
+  font-size: var(--data-font-size);
+  font-weight: 600;
+}
+
+.tabulator .tabulator-header .tabulator-col {
+  background: transparent;
+  border-right: 1px solid var(--tabulator-border);
+  min-height: var(--row-height);
+  padding: 0 6px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--tabulator-text);
+}
+
+.tabulator .tabulator-header .tabulator-col:last-child {
+  border-right: 0;
+}
+
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+  padding: 0;
+  line-height: var(--row-height);
+}
+
+.tabulator .tabulator-header .tabulator-col .tabulator-col-sorter {
+  right: 2px;
+  top: 0;
+  height: var(--row-height);
+}
+
+.tabulator .tabulator-row {
+  background: var(--tabulator-cell-bg);
+  border-bottom: 1px solid var(--tabulator-border);
+  min-height: var(--row-height);
+  color: var(--tabulator-text);
+}
+
+.tabulator .tabulator-row:nth-child(even) {
+  background: var(--strip);
+}
+
+.tabulator .tabulator-row:hover {
+  background: var(--tabulator-row-hover);
+}
+
+.tabulator .tabulator-row.tabulator-selected {
+  background: var(--tabulator-selected) !important;
+  color: var(--tabulator-text);
+}
+
+.tabulator .tabulator-row .tabulator-cell {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-right: 0;
+  line-height: calc(var(--row-height) - var(--cell-pad-y) * 2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--data-font-size);
+}
+
+.tabulator .tabulator-row .tabulator-cell:last-child {
+  border-right: 0;
+}
+
+.tabulator .tabulator-group {
+  background: var(--tabulator-group-bg) !important;
+  border-top: 1px solid var(--tabulator-group-border) !important;
+  border-bottom: 1px solid var(--tabulator-group-border) !important;
+  color: var(--muted) !important;
+  font-size: var(--data-font-size);
+  font-weight: 600;
+  padding: 2px 8px;
+  min-height: 18px;
+  box-sizing: border-box;
+}
+
+.tabulator .tabulator-group .tabulator-group-label {
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--data-font-size);
+}
+
+.tabulator .tabulator-group .tabulator-arrow {
+  display: inline-block;
+  margin-right: 4px;
+  color: var(--muted);
+}
+
+.tabulator-row .tabulator-cell.tabulator-editing,
+.tabulator-cell.tabulator-editable {
+  outline: 1px solid var(--accent);
+}
+
+.tabulator .tabulator-footer {
+  background: var(--tabulator-header-bg);
+  color: var(--muted);
+  font-size: var(--data-font-size);
+  border-top: 1px solid var(--tabulator-border);
+  min-height: 22px;
+  padding: 0 8px;
+}
+
+/* ----------------------- Inspector (right pane) ----------------------- */
+
+.inspector-region {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.inspector-header {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px 6px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.inspector-title {
+  font-size: var(--inspector-title-size);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-subtitle {
+  font-size: var(--inspector-subtitle-size);
+  color: var(--muted);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-meta {
+  font-size: var(--data-font-size);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+
+.inspector-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.inspector-tabs button {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 4px 8px;
+  font-size: var(--data-font-size);
+  cursor: pointer;
+  min-height: 22px;
+}
+
+.inspector-tabs button:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.inspector-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  background: var(--panel-2);
+}
+
+.inspector-content {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 8px 10px;
+  font-size: var(--data-font-size);
+  color: var(--text);
+}
+
+.inspector-content div {
+  display: block;
+}
+
+.inspector-content div.is-collapsed {
+  display: none;
+}
