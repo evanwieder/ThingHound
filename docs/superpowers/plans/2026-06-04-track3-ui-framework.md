@@ -1,6 +1,8 @@
 # Track 3 — UI Framework Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development for post-gate units; superpowers:frontend-design where available. Runs **in parallel with Track 1** — it codes against the **bridge contract** (`functional-spec.md §6`), not a live database. The first deliverable is a **main-page demo on dummy data**, a **hard gate (Gate D)**: no further UI work until the user approves. Begin coding only with explicit user authorization. Checkbox (`- [ ]`) steps track progress.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+> Use superpowers:frontend-design where available. Runs **in parallel with Track 1** — it codes against the **bridge contract** (`functional-spec.md §6`), not a live database. The first deliverable is a **main-page demo on dummy data**, a **hard gate (Gate D)**: no further UI work until the user approves. Begin coding only with explicit user authorization.
 
 **Authoritative sources:** `docs/specs/thinghound-functional-spec.md` (§4 UI, §6 bridge), `docs/specs/thinghound-architecture.md` (§2 stack, §3 runtime, §7 security). Where this plan and a doc disagree, the doc wins.
 
@@ -34,19 +36,44 @@ The bridge is a **transport boundary**: it converts UUID strings ↔ ids and sha
 
 ---
 
-## 3. Task B — Frontend Scaffold + Main Layout
+## 3. Task B — Frontend Scaffold + Main Layout (split into B1–B5)
 
 **Files:** `ui/index.html`, `ui/src/{main,layout,grid,tree,inspector,filterstrip}.js`, `ui/styles/*.css`, build config.
 
 Implements the `functional-spec.md §4.1` layout: global toolbar (top, always visible) · left pane (category tree) · centre pane (grid above, filter strip below; dominant, always visible) · right pane (inspector) · status bar (bottom, always visible).
 
-- [ ] **Step 1: build tooling** — esbuild/Vite bundles `ui/src` → `ui/dist`; `app.py` points the webview at the built `index.html`.
+UI scaffolding does not unit-test cleanly the way backend code does; verification is **per-region visual confirmation** under the mock bridge. Each sub-task ends with a concrete *run and visually verify* step with a named expected outcome, and **its own commit** (after authorization), so review can happen per region instead of as one wall.
+
+### Task B1 — Build tooling + layout shell
+
+- [ ] **Step 1: build tooling** — esbuild/Vite bundles `ui/src` → `ui/dist`; `app.py` points the webview at the built `index.html`. Add an npm script `build` and a `--dev` watch mode.
 - [ ] **Step 2: layout shell** — CSS-grid three panes + toolbar + status bar. **All sashes draggable**; left/right/filter-strip each **independently minimisable** to a thin restore bar at their edge (left/right/bottom); centre grid always fills remaining space, cannot minimise; sensible default percentages at startup (§4.1 pane sizing).
-- [ ] **Step 3: Tabulator grid** (§4.4) — virtualized (no pagination), compact rows, thumbnail column first, dynamic columns built from `grid.getDisplayColumns()` + `grid.getColumnMappings()`, hero column pinned + bold, group-by category with collapsible in-grid section headers, row-click populates the inspector without navigation.
-- [ ] **Step 4: category tree** (§4.1) — hierarchical, searchable; selecting a node filters the grid to that subtree.
-- [ ] **Step 5: inspector** (§4.3) — top summary zone (name, SKU, mfr/PN, primary category, lifecycle, on-hand, thumbnail) always visible; bottom tabbed zone (Attributes, Stock & Events, Instances, Vendors, Alternates, BOM/Where-used, Simulation) populated from fixtures.
-- [ ] **Step 6: filter strip** (§4.5) — quick-search bar (`/` focus), parametric filter chips (`attribute · operator · value+unit`), scope selector, configuration switcher.
-- [ ] **Step 7: commit** `feat(ui): main layout shell`.
+- [ ] **Step 3: run and visually verify** — `npm run build && python -m thinghound.ui.app --mock`. **Expected:** window opens; toolbar visible top, status bar visible bottom; three empty panes (left/centre/right); dragging each sash resizes neighbours; left/right/filter-strip each collapse to a thin restore bar and restore; centre never collapses.
+- [ ] **Step 4: commit (after authorization)** `feat(ui): build tooling + layout shell`.
+
+### Task B2 — Tabulator grid (centre pane)
+
+- [ ] **Step 1: grid module** (§4.4) — virtualized (no pagination), compact rows, thumbnail column first, dynamic columns built from `grid.getDisplayColumns()` + `grid.getColumnMappings()`, hero column pinned + bold, group-by category with collapsible in-grid section headers, row-click emits a `row:selected` event (other regions consume it).
+- [ ] **Step 2: run and visually verify** — launch with `--mock` using a temporary fixture with three rows (resistor / capacitor / connector) sharing global Display Columns. **Expected:** grid renders three rows; hero column populated for the resistor row only; thumbnail column visible; scrolling does not paginate; clicking a row highlights it and fires the event (verify via `console.log` in dev).
+- [ ] **Step 3: commit (after authorization)** `feat(ui): heterogeneous Tabulator grid`.
+
+### Task B3 — Category tree (left pane)
+
+- [ ] **Step 1: tree module** (§4.1) — hierarchical, searchable; selecting a node filters the grid to that subtree via `grid.queryItems({categoryId})`.
+- [ ] **Step 2: run and visually verify** — with `--mock` and a 3-level category fixture. **Expected:** tree expands/collapses; type-to-search highlights matches; selecting a category narrows the grid; selecting root clears the filter.
+- [ ] **Step 3: commit (after authorization)** `feat(ui): category tree`.
+
+### Task B4 — Inspector (right pane)
+
+- [ ] **Step 1: inspector module** (§4.3) — top summary zone (name, SKU, mfr/PN, primary category, lifecycle, on-hand, thumbnail) always visible; bottom tabbed zone (Attributes, Stock & Events, Instances, Vendors, Alternates, BOM/Where-used, Simulation) populated from fixtures. Subscribes to the grid's `row:selected` event.
+- [ ] **Step 2: run and visually verify** — with `--mock` and an item fixture. **Expected:** clicking a grid row populates the summary zone; all seven tabs are present and switchable; each tab shows its fixture content (or an empty-state placeholder if the fixture omits it).
+- [ ] **Step 3: commit (after authorization)** `feat(ui): inspector pane`.
+
+### Task B5 — Filter strip (below grid)
+
+- [ ] **Step 1: filter-strip module** (§4.5) — quick-search bar (`/` focus shortcut), parametric filter chips (`attribute · operator · value+unit`), scope selector, configuration switcher.
+- [ ] **Step 2: run and visually verify** — with `--mock`. **Expected:** pressing `/` focuses the quick-search; typing emits debounced search calls (visible in console); chip editor opens on click and adds a chip to the strip; scope selector and configuration switcher render with fixture options.
+- [ ] **Step 3: commit (after authorization)** `feat(ui): filter strip`.
 
 ---
 
@@ -57,7 +84,7 @@ Implements the `functional-spec.md §4.1` layout: global toolbar (top, always vi
 - [ ] **Step 1:** author fixtures shaped **exactly** like §6 responses. Heterogeneity is the point: a resistor fills the hero column from Resistance, a capacitor from Capacitance, a mechanical part leaves it blank — all under the same global Display Columns.
 - [ ] **Step 2:** wire the demo through the **mock bridge** so the data path equals production (`window.pywebview.api.grid_query_items(...)` → mock → fixtures).
 - [ ] **Step 3:** run `python -m thinghound.ui.app --mock`; confirm full layout renders, grid is dense + heterogeneous, tree filtering works, row-click fills the inspector, filter chips render, panes resize/minimise.
-- [ ] **Step 4:** capture a screenshot (via the `run`/`verify` skill) and present it.
+- [ ] **Step 4:** capture a screenshot of the running demo using the OS screenshot tool (macOS: `screencapture -w demo.png` and click the demo window; the file lands in the working directory). Attach it to the Gate-D approval request.
 
 - [ ] **GATE D — STOP.** Present the demo. **Do not start any post-gate unit until the user explicitly approves the direction.** Absorb any layout/density/interaction revisions first.
 - [ ] **Step 5 (after approval):** commit `feat(ui): main-page demo on dummy data (touchstone)`.

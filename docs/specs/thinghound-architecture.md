@@ -87,7 +87,7 @@ Pure data. Frozen Pydantic `BaseModel` for domain entities; frozen dataclasses f
 The single source of truth for persisting a domain aggregate. An aggregate is a root entity and the rows it is saved and loaded with — not a table, not a single model.
 
 - A simple entity maps to one table; a compound entity (e.g., an item with its attribute values) maps to several physical tables via one mapper.
-- Each mapper owns: column lists, table names and aliases, all SELECT / INSERT / UPDATE / DELETE SQL, single and batch (`executemany`) forms, and all row ↔ model mapping. `_row_to_*` free functions are an antipattern — row mapping belongs on the mapper that owns the type.
+- Each mapper owns: column lists, table names and aliases, all SELECT / INSERT / UPDATE / DELETE SQL, single and batch (`executemany`) forms, and all row ↔ model mapping. `_row_to_*` free functions are an antipattern — row mapping belongs on the mapper that owns the type. A single-entity mapper names its converters `_from_row` / `_to_row`; a compound mapper that owns several entity types prefixes each pair with the entity name (`_<entity>_from_row` / `_<entity>_to_row`, e.g. `_definition_from_row`, `_enum_value_from_row`) to disambiguate.
 - **The physical schema is an implementation detail inside the mapper.** The mapper can normalize, denormalize, split hot/cold columns, or partition across tables without changing any consumer.
 - **Single-writer-per-table invariant:** a mapper may own many tables, but each table is written by exactly one aggregate mapper. Reads may cross freely.
 - The mapper is the dialect seam: per-backend implementations (`SqliteItemMapper`, later `PostgresItemMapper`) sit behind a common interface. The domain layer, session, and registry never see dialect-specific SQL.
@@ -108,7 +108,7 @@ The dynamic WHERE/sort assembly is in-house: a small bespoke parameter-binding b
 
 ### 4.6 Session / Unit of Work
 
-Owns the connection, the transaction scope, and the session-level identity map (cache). Exposes mappers, domain objects, collections, and query entry points. **Knows no table SQL.** Transaction management — `BEGIN` / `COMMIT` / `ROLLBACK` — is the session's responsibility, not the mapper's or domain object's. No `commit()` is called inside any mapper or `write()` method; callers compose multi-aggregate writes into one transaction.
+Owns the connection, the transaction scope, and the session-level identity map (cache). Exposes mappers, domain objects, collections, and query entry points. **Knows no table SQL and performs no row↔model conversion** — both are exclusively the aggregate mapper's responsibility. Transaction management — `BEGIN` / `COMMIT` / `ROLLBACK` — is the session's responsibility, not the mapper's or domain object's. No `commit()` is called inside any mapper or `write()` method; callers compose multi-aggregate writes into one transaction.
 
 ### 4.7 AppRegistry (configuration / structure layer)
 

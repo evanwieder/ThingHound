@@ -1,5 +1,5 @@
 # Coding Standards Infrastructure — Design
-
+# this file is superceded but may still be used as a reference.
 **Date:** 2026-06-03  
 **Status:** Approved  
 **Trigger:** Phase 1 repository implementation surfaced missing SQL and repository architecture standards; existing CLAUDE.md mixed agent instructions with coding standards, and had no SQL, data-model, repository, or testing standards at all.

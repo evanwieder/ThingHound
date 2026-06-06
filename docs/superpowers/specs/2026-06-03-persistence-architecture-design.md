@@ -1,5 +1,5 @@
 # Persistence Architecture — Design
-
+# this file has been superceded but may still be used as a reference
 **Date:** 2026-06-03
 **Status:** Approved (pending written review)
 **Supersedes:** the repository-owns-SQL / `row_to_*` shape described in the data-model and repository sections of `2026-06-03-coding-standards-design.md`; reframes several "locked" substrate decisions in project memory (see *What this supersedes*).

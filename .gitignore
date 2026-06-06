@@ -37,3 +37,5 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+/docs/superpowers/specs/OBSOLETE_IGNORE_THESE_FILES/
+/.junie/

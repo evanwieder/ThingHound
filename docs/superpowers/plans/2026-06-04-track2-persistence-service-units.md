@@ -1,6 +1,10 @@
 # Track 2 — Persistence & Service Units Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: one fresh subagent per unit (superpowers:subagent-driven-development); superpowers:dispatching-parallel-agents for the Phase-1b fan-out. Each unit is sized for a basic (Haiku-class) agent and follows the **uniform unit template** (§2) against the **worked example** (§3). Starts only after **Gate A**. Begin coding only with explicit user authorization. Checkbox (`- [ ]`) steps track progress.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+> One fresh subagent per unit; superpowers:dispatching-parallel-agents for the Phase-1b fan-out. Each unit is sized for a basic (Haiku-class) agent and follows the **uniform unit template** (§2) against the **worked example** (§3). Starts only after **Gate A**. **Every commit is gated on explicit user authorization** — no exceptions.
+
+> **Templated unit specs (program-plan §4 declared deviation).** §4 (U1–U6) and §5 (Phase-1b table) are condensed catalogs of aggregates / behaviours / bridge backing. Each unit is **expanded at dispatch time** into a full step-by-step plan by combining: (a) the unit row, (b) the Uniform Unit Template (§2), (c) the worked canonical example (§3), and (d) the relevant `data-model.md` section. The agent that executes a unit receives the expanded plan, not the §4/§5 row. The orchestrator must perform this expansion before dispatching.
 
 **Authoritative sources:** `docs/specs/thinghound-{functional-spec,architecture,data-model}.md`; `docs/dev/standards-*.md` (the aggregate-mapper standards are `docs/dev/standards-repository.md` + agent version — the filename says "repository" but the content mandates **aggregate mappers, not a generic repository**). Where this plan and a doc disagree, the doc wins.
 
@@ -64,7 +68,10 @@ A unit delivers **one mapper per aggregate it owns** (plus any query objects and
               enforces uniqueness/coupling; raises typed errors). Service does NO SQL, NO conversion.
 - [ ] Step 9  Run full suite -> green; ruff clean; CRR guard clean (if a migration changed).
 - [ ] Step 10 Self-verify (paste real green output), then request code review against this spec + DoD.
-- [ ] Step 11 Address review, commit `feat(<unit>): <summary>` (after authorization).
+- [ ] Step 11 Address review, then **request explicit user authorization** before committing.
+              Only after that authorization, commit `feat(<unit>): <summary>`. **This applies
+              to every unit, every time** — neither the template nor any prior approval grants
+              standing authorization for subsequent commits (CLAUDE.md, program plan §8).
 ```
 
 **Definition of Done** = program plan §5.
@@ -274,7 +281,7 @@ After Gate B, dispatch in parallel (superpowers:dispatching-parallel-agents). No
 | **Vendors & Offers** | `VendorMapper` (`vendor`) · `VendorOfferMapper` *(compound: `vendor_offer` + `price_break`)* | offer per `(item,vendor)`; soft-unique `(item,vendor,vendor_sku)` service-enforced; breaks by `qty_min`; replacement cost = lowest active-offer tier in home currency | Vendors tab |
 | **Offer History & Costing** | `OfferHistoryMapper` (`offer_history`, LOG) | append snapshot; price/availability trend query object; FX roll-up via `fx_rate` (read) | offer history; roll-ups |
 | **Locations** | `LocationMapper` (`location`) | recursive-CTE hierarchy query; per-location balances (reads `inventory_event`); scope selector | locations workspace |
-| **Instances depth** | *(no new writer tables; reads U5 aggregates)* | measurement current-value = latest `(measured_at,hlc,id)`; assign/waste/lost | Instances tab, `instances.measure` |
+| **Instances depth** | `InstanceMeasurementMapper` (`instance_measurement`, LOG) | append-only write via `instances.measure`; current-value = latest by `(measured_at,hlc,id)` (query object); assign/waste/lost service actions | Instances tab, `instances.measure` |
 | **Projects** | `ProjectMapper` (`project`) | CRUD + status; consumption linkage | project picker |
 | **Tags & FTS** | `TagMapper` *(compound: `tag` + `item_tag`)*; **LOCAL** `fts_item` via triggers/query | trigram FTS over names/desc/SKU/MPN/markings/refdes/tags; each dimensional value indexed as-entered **and** canonical; unit-aware quick-search routing | §3.14 search |
 | **Attachments** | `AttachmentMapper` (`attachment`); **LOCAL** `rm_thumbnail` | polymorphic owner; path-traversal rejected at service; lazy Pillow thumbnails | Assets, thumbnail column |

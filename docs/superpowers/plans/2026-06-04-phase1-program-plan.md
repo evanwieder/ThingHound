@@ -1,6 +1,8 @@
 # ThingHound Phase 1 — Program Plan (Orchestration)
 
-> **For agentic workers:** This is the **master plan**. It contains no code. It defines the development tracks, their dependency gates, the parallelization model, the **persistence layering and responsibility boundaries** every unit must respect, and the per-unit Definition of Done. Execute the per-track plans it points to using superpowers:subagent-driven-development. Checkbox (`- [ ]`) steps are for tracking.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+> This is the **master plan**. It contains no code. It defines the development tracks, their dependency gates, the parallelization model, the **persistence layering and responsibility boundaries** every unit must respect, and the per-unit Definition of Done. Execute the per-track plans it points to.
 
 **Authoritative sources (the only sources of truth).** This plan is derived from, and must not deviate from:
 - `docs/specs/thinghound-functional-spec.md` — requirements, business rules, bridge surface.
@@ -90,6 +92,8 @@ Track 1 blocks Track 2. Track 3 runs alongside Track 1 (it codes against the `fu
 Why basic agents suffice: the foundation locks every hard decision (types, encoding, schema, CRR rules, layering). Each unit is then a pattern-following application of the aggregate-mapper standard; only the table/field specifics change, and those come verbatim from `data-model.md`.
 
 Use **superpowers:dispatching-parallel-agents** for the Phase-1b fan-out. The **single-writer-per-table** invariant guarantees parallel units never write the same table; reads may cross freely.
+
+**Declared deviation — templated unit specs (user-approved).** Track 2 §4 (U1–U6) and §5 (Phase-1b table) describe each unit in a condensed form (aggregate mappers + behaviours + bridge backing) rather than expanding every step inline as Track 1 does. Each unit is expanded into a full step-by-step plan **at dispatch time** by the orchestrator, combining: (a) the unit's row in §4/§5, (b) the **Uniform Unit Template** (Track 2 §2, 11 steps), (c) the **worked canonical example** (Track 2 §3, full mapper code), and (d) the relevant `data-model.md` section. This is a conscious trade — it keeps the catalog readable and lets the orchestrator inject the most current `data-model.md` field lists when dispatching, rather than freezing them in the plan. The basic agent that executes a unit receives the expanded plan, not the §4/§5 row directly. This deviation is safe because: (i) `standards-repository.md` plus the §3 worked example define the mapper shape unambiguously; (ii) Phase 1a is sequential and each unit is reviewed before the next dispatches; (iii) Phase 1b parallel units are isolated by single-writer-per-table.
 
 ---
 

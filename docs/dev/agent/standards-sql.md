@@ -30,6 +30,7 @@ Standards are split: **Global** rules apply to all DBMS targets. **SQLite-Specif
 15. CRR/LOG tables: every non-PK `NOT NULL` column must have a `DEFAULT` value (cr-sqlite rejects tables without defaults).
 16. CRR/LOG tables: no cross-column `CHECK` constraints. Enforce cross-column invariants at the service layer.
 17. CRR/LOG tables: no `AUTOINCREMENT`, no `REAL` columns.
-17a. `Timestamp` / `Date` columns are `INTEGER` epoch (epoch ms, UTC), never `TEXT`; the mapper encodes ISO-8601 ↔ epoch at the storage boundary. `HLC` stays `TEXT`.
+17a. SQLite tables with a non-integer primary key must be declared `WITHOUT ROWID`.
+17b. `Timestamp` / `Date` columns are `INTEGER` epoch (epoch ms, UTC), never `TEXT`; the mapper encodes ISO-8601 ↔ epoch at the storage boundary. `HLC` stays `TEXT`.
 18. CRR/LOG schema changes use `crsql_begin_alter` / `crsql_commit_alter`.
 19. SQLite parameter placeholder is `?`. Postgres drivers use `%s` (psycopg2) or `$1` (psycopg3).

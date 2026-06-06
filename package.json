@@ -1,0 +1,15 @@
+{
+  "name": "thinghound-ui",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "esbuild ui/src/main.js --bundle --outfile=ui/dist/main.js --sourcemap && cp ui/index.html ui/dist/index.html",
+    "dev": "esbuild ui/src/main.js --bundle --outfile=ui/dist/main.js --sourcemap --watch"
+  },
+  "dependencies": {
+    "tabulator-tables": "^6.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
