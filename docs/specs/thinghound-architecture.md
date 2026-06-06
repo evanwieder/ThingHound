@@ -1,13 +1,13 @@
 # ThingHound — Architecture Specification
 
-**Date:** 2026-06-03
+**Date:** 2026-06-06
 **Companion documents:** `thinghound-functional-spec.md`, `thinghound-data-model.md`
 
 ---
 
 ## 1. Philosophy & Design Principles
 
-- **No ORM.** All SQL is hand-written, parameterized, and owned by aggregate mappers. No SQL appears in service, domain, or UI code.
+- **No ORM.** SQL is built by a model-aware query component from mapper metadata, always parameterized. No SQL appears in service, domain, or UI code; no hand-written named SQL constants.
 - **Exact arithmetic everywhere.** No `REAL` for any value, quantity, or money. The Python→SQLite path uses exact rationals and `Decimal`; the storage path uses scaled integers and exact decimal text.
 - **The mapper is the dialect seam.** Every table's SQL lives in exactly one aggregate mapper. Swapping the database backend means writing new mappers; nothing above the mapper layer changes.
 - **Derived data is computed, not synced.** Read-model tables, FTS indexes, and stock aggregates are derived from source data and maintained incrementally by DB-side triggers. They are rebuilt in full when needed.
@@ -86,9 +86,8 @@ Pure data. Frozen Pydantic `BaseModel` for domain entities; frozen dataclasses f
 The single source of truth for persisting a domain aggregate. An aggregate is a root entity and the rows it is saved and loaded with — not a table, not a single model.
 
 - A simple entity maps to one table; a compound entity (e.g., an item with its attribute values) maps to several physical tables via one mapper.
-- Each mapper owns: column lists, table names and aliases, all SELECT / INSERT / UPDATE / DELETE SQL, single and batch (`executemany`) forms, and all row ↔ model mapping. `_row_to_*` free functions are an antipattern — row mapping belongs on the mapper that owns the type. A single-entity mapper names its converters `_from_row` / `_to_row`; a compound mapper that owns several entity types prefixes each pair with the entity name (`_<entity>_from_row` / `_<entity>_to_row`, e.g. `_definition_from_row`, `_enum_value_from_row`) to disambiguate.
+- Each mapper owns: column lists, table names and aliases, and all row ↔ model mapping. SQL itself is built by the model-aware query component (§4.5) from mapper-provided metadata; the mapper does not hand-write SQL strings. `_row_to_*` free functions are an antipattern — row mapping belongs on the mapper that owns the type. A single-entity mapper names its converters `_from_row` / `_to_row`; a compound mapper that owns several entity types prefixes each pair with the entity name (`_<entity>_from_row` / `_<entity>_to_row`, e.g. `_definition_from_row`, `_enum_value_from_row`) to disambiguate.
 - **The physical schema is an implementation detail inside the mapper.** The mapper can normalize, denormalize, split hot/cold columns, or partition across tables without changing any consumer.
-- **Single-writer-per-table invariant:** a mapper may own many tables, but each table is written by exactly one aggregate mapper. Reads may cross freely.
 - The mapper is the dialect seam: per-backend implementations (`SqliteItemMapper`, later `PostgresItemMapper`) sit behind a common interface. The domain layer, session, and registry never see dialect-specific SQL.
 
 ### 4.3 Domain Objects (operational data)
@@ -99,11 +98,11 @@ Wrap a model instance plus a session reference. Self-maintaining: `write()`, `re
 
 Batch-first containers of domain objects. `items.save()` is one batched statement in one transaction — not a per-row loop. The collection is the normal unit of work for grid loads, search results, and bulk imports; the single-row path is the degenerate case.
 
-### 4.5 Query / Projection Objects (read side)
+### 4.5 Query Component (read side)
 
-Compose fully parameterized queries (every value bound, never interpolated) using mapper column metadata, joining and aggregating across whatever tables are needed. Return purpose-built read models shaped for the caller (e.g., a grid row with computed display values). This is where join SQL and dynamic `WHERE` / `ORDER BY` / `GROUP BY` assembly live.
+A model-aware query component builds all SQL. Callers express **intent only** — the entity, the projection they need, the predicate, the ordering — and never decide how the query is assembled. Construction and strategy live inside the component and are chosen per use case. Joins derive from the model's declared relationships. SQL is assembled from curated pieces; every value is bound (never interpolated) and identifiers come only from metadata. The component returns purpose-built read models shaped for the caller (e.g., a grid row with computed display values).
 
-The dynamic WHERE/sort assembly is in-house: a small bespoke parameter-binding builder. SQLGlot may be used at dev/test time to validate composed SQL, but is not a runtime dependency.
+The component is in-house. SQLGlot may be used at dev/test time to validate composed SQL, but is not a runtime dependency. (Detailed generator behavior — projection/aggregate declaration, EAV filter strategy, expression surface — is in-progress and not yet final.)
 
 ### 4.6 Session / Unit of Work
 
@@ -111,7 +110,7 @@ Owns the connection, the transaction scope, and the session-level identity map (
 
 ### 4.7 AppRegistry (configuration / structure layer)
 
-Config and structure (unit dimensions, prefix sets, unit multipliers, attribute categories, attribute definitions, category trees, grid configurations) is loaded once at startup through the same mappers and held in memory for the session. The application is unconfigured until the registry loads. Structure objects are effectively immutable session singletons. Rare structure edits go through the structure aggregate's mapper and trigger a registry refresh. Structure and operational data are distinct layers; operational data depends on the registry.
+Config and structure (unit dimensions, prefix sets, unit multipliers, attribute domains, attributes, category forest, grid layouts) is loaded once at startup through the same mappers and held in memory for the session. These are the integer-keyed structure tables. The application is unconfigured until the registry loads. Structure objects are effectively immutable session singletons. Rare structure edits go through the structure aggregate's mapper and trigger a registry refresh. Structure and operational data are distinct layers; operational data depends on the registry.
 
 ---
 
@@ -119,7 +118,7 @@ Config and structure (unit dimensions, prefix sets, unit multipliers, attribute 
 
 ### 5.1 No Pre-Materialized Grid
 
-Grid display values are computed at query time. Pre-materialized grid rows create tight coupling between attribute definitions (scale, display unit) and cached display strings — a scale change would require cascading updates across all affected items' cached rows. With well-designed indexes, query-time computation is fast at realistic catalog sizes and avoids this coupling entirely.
+Grid display values are computed at query time. Pre-materialized grid rows create tight coupling between attributes (scale, display unit) and cached display strings — a scale change would require cascading updates across all affected items' cached rows. With well-designed indexes, query-time computation is fast at realistic catalog sizes and avoids this coupling entirely.
 
 ### 5.2 Indexes Drive Performance
 
@@ -145,53 +144,29 @@ For large imports or restores, derived tables are rebuilt in a single batch oper
 
 ### 6.1 Engine
 
-cr-sqlite turns CRR and LOG tables into conflict-free replicated relations with column-level last-writer-wins and tracked deletes (tombstones). Each column carries causal metadata; changesets are exchanged between devices and applied independently per column.
+Sync uses **Turso / libSQL**. The application runs against a local embedded replica that optionally syncs to a Turso primary. Sync is **single-user and non-simultaneous** — one active machine at a time. There is no concurrent multi-writer merge; conflict reconciliation is **deferred** and out of scope for v1. The free tier is sufficient for the catalog scale targeted. This applies only to the SQLite/libSQL backend; the future Postgres backend has its own sync/deployment model.
 
-### 6.2 Sync Classes
+### 6.2 What Syncs
 
-- **CRR** — catalog, schema, configuration, items, attribute values, vendors, BOMs, synced app settings.
-- **LOG** — inventory events, instance measurements, offer history. Insert-only; no conflicts on write; merge trivially.
-- **LOCAL** — device settings, all derived/cached tables. Never synced. Rebuilt after merge.
-- **REF** — code tables (reference data). Application-defined values seeded by migrations. Identical on every device. Does not sync. Read-only at runtime.
+- **Synced** — catalog, schema, configuration, items, attribute values, vendors, BOMs, inventory events, instance measurements, offer history, synced app settings.
+- **Device-local, never synced** — `device_setting` and all derived read-model/cache tables. These are rebuilt locally; they are not part of the replica's synced set.
+- **Reference / code tables** — seeded by migrations, read-only at runtime, identical everywhere.
 
 ### 6.3 Identity
 
-All PKs are `UUIDv7` (defined in `thinghound.types`, validates version byte at construction) — time-ordered and collision-free across devices without coordination. Stored as `BLOB(16)` in SQLite. Cross the JS bridge as canonical `8-4-4-4-12` strings, converted by the mapper at the storage boundary and by the bridge handler at the transport boundary.
+Operational/transactional PKs are `UUIDv7` (from `thinghound.types`, validates version byte at construction) — time-ordered and collision-free without coordination. Structure/master-data PKs are DB-generated integers. UUIDs are stored as `BLOB(16)` in SQLite and cross the JS bridge as canonical `8-4-4-4-12` strings; integers cross as integers. The mapper converts at the storage boundary and the bridge handler at the transport boundary.
 
 ### 6.4 Event Ordering
 
-Events carry an HLC timestamp. Replay and costing order is `(effective_date, hlc, id)` — deterministic under back-dating, ties, and sync merges.
+Events carry an HLC timestamp. Replay and costing order is `(effective_date, hlc, uuid)` — deterministic under back-dating and ties.
 
-### 6.5 Uniqueness Under Merge
+### 6.5 Referential Integrity
 
-`UNIQUE` constraints are not placed on CRR tables for natural keys (SKU, MPN, manufacturer name, attribute definition names). Uniqueness is enforced by the service layer at local write time. Under sync, two devices may independently create records with the same natural key. The post-merge integrity check detects these collisions and quarantines the conflicting records for user resolution via a dedicated conflicts UI. A quarantine table holds the conflicting records with metadata describing the conflict; the user decides which is canonical and resolves accordingly.
+Foreign keys are enforced at the database level (FK enforcement ON). With single-user, non-simultaneous sync there is no concurrent-merge scenario that would reject a peer's partial write, so the CRDT-era trade-offs (FK off, no cross-column CHECK, application-only integrity) no longer apply.
 
-### 6.6 Referential Integrity
+### 6.6 Transport
 
-Application-enforced across CRR tables (the CRDT trade-off — FK enforcement at the DB level would reject valid changesets from peers). A post-merge integrity check validates all critical references and quarantines dangling records rather than hard-failing. The check is a pure function of merged state so every replica computes identical results and converges without coordination.
-
-### 6.7 Multi-Row Invariants Under LWW
-
-Column-level LWW can split invariants that span multiple cells or rows. Mitigations:
-- **Single-cell ownership where possible:** "exactly one primary category per item" lives in `item.primary_category_id` (one column, LWW-safe). "Default grid config per scope" lives in `category.default_grid_config_id` or an `app_setting` key.
-- **Append-only groups:** INDIVIDUATE event legs are created atomically on one device and immutable. A merge that delivers legs out of order (partial sync) is tolerated; the integrity check flags a group that remains unbalanced after the full changeset applies.
-- **Post-merge repair:** for any invariant not reducible to a single cell, a deterministic repair function runs after every merge. Pure function of merged state; every replica computes identical repairs.
-
-### 6.8 cr-sqlite Compatibility Rules
-
-All CRR and LOG table schemas must satisfy these rules (empirically verified — see `docs/dev/crsqlite-spike-findings.md`):
-
-1. Every non-PK `NOT NULL` column must have a `DEFAULT` value. (`crsql_as_crr` rejects tables without defaults on NOT NULL columns.)
-2. No cross-column `CHECK` constraints. Column changesets apply independently; a cross-column check may fire on a partial changeset and reject a valid remote update. Enforce such invariants at the application layer.
-3. Single-column `CHECK` constraints are acceptable if conservative.
-4. No `AUTOINCREMENT`. No `REAL`. No `REFERENCES` / `FOREIGN KEY` enforcement.
-5. Schema changes to CRR/LOG tables use `crsql_begin_alter` / `crsql_commit_alter`.
-
-A CI guard (`scripts/check_crr_rules.py`) enforces these rules on every migration file. It must cover all five rules; the guard must not pass migrations that violate any of them.
-
-### 6.9 Transport
-
-Changeset exchange between devices is out of scope for v1. The schema is sync-ready; the transport layer (authenticated peer channel, mobile companion) is a Phase 4 deliverable.
+Replica ↔ primary sync is handled by libSQL/Turso. Hardening multi-device sync and a mobile companion are Phase 4 deliverables.
 
 ---
 
@@ -216,22 +191,17 @@ Changeset exchange between devices is out of scope for v1. The schema is sync-re
 - **BOM/build:** buildable quantity with substitutes; atomic consumption; shortage and back-order paths.
 
 ### Integration Tests
-- **Repository round-trips:** every aggregate mapper: write → read → compare. Use a real in-memory SQLite connection; no mocking of the data layer.
+- **Repository round-trips:** every aggregate mapper: write → read → compare. Use a real in-memory libSQL/SQLite connection; no mocking of the data layer.
 - **Parametric search:** compound AND/OR predicates; unit-converted thresholds; composite component leaf filters; dimension-wide threshold queries.
-- **Schema resolution:** attribute inheritance via recursive CTE; child overrides; multi-category union; required-field logic.
+- **Schema resolution:** attribute inheritance via recursive CTE; child overrides and exclusions; multi-category union; required-field logic against the naming category.
 - **Inventory event semantics:** stock balance derivation; individuation net-zero; per-location and per-bucket balances.
-- **Read-model correctness:** stock aggregate trigger maintenance equals full rebuild (consistency oracle).
-- **Migrations:** forward apply on fixture database; checksum integrity; no CRR rule violations (CI guard).
-
-### Sync / CRDT Tests
-- **Merge scenarios:** offline edits on two replicas merge per policy; tombstones converge; post-merge integrity check runs correctly.
-- **Uniqueness collision:** two replicas create the same SKU offline; post-merge quarantine fires correctly.
-- **Partial individuation group:** INDIVIDUATE legs delivered across two partial syncs; integrity check tolerates mid-flight group; flags only if unbalanced after full changeset.
-- **Measurement ordering:** concurrent measurements with equal or skewed `measured_at` resolve to the same current value on every replica.
-- **Attribution:** every CRR/LOG write records a user; cross-device merges preserve correct attribution.
+- **Read-model correctness:** watermark snapshot + tail fold equals a full rebuild (consistency oracle); current value correct regardless of when aggregation last ran.
+- **Measurement ordering:** measurements with equal or skewed `measured_ts` resolve to a stable current value by `(measured_ts, hlc, uuid)`.
+- **Attribution:** every write records a user.
+- **Migrations:** forward apply on fixture database; checksum integrity.
 
 ### CI
-Ruff for linting. pytest suite headless. CRR-rules guard on all migration files. Python 3.14 minimum.
+Ruff for linting. pytest suite headless. Python 3.14 minimum.
 
 ---
 
@@ -241,7 +211,8 @@ The logical data model (`thinghound-data-model.md`) uses database-agnostic types
 
 | Logical Type | SQLite (current) | Postgres (future) | Notes |
 |---|---|---|---|
-| `UUID` | `BLOB(16)` — raw bytes via `id.bytes` / `uuid.UUID(bytes=...)` | `UUID` — native | Bridge: `str(id)` / `uuid.UUID(str)` |
+| `UUID` | `BLOB(16)` — raw bytes via `uuid.bytes` / `uuid.UUID(bytes=...)`; `WITHOUT ROWID` table | `UUID` — native | Operational/transactional PKs. Bridge: `str(uuid)` / `uuid.UUID(str)` |
+| `Integer` PK | `INTEGER PRIMARY KEY` — DB-generated rowid table | `INTEGER`/`BIGINT` identity | Structure/master-data PKs |
 | `String` | `TEXT` | `TEXT` / `VARCHAR` | |
 | `Integer` | `INTEGER` | `INTEGER` / `BIGINT` | |
 | `Decimal` | Role-dependent — see **Decimal encoding by role** below | Single `NUMERIC` column | SQLite has no exact decimal type. `*_exact TEXT` is always the source of truth for math/display; `*_scaled INTEGER` (when present) backs indexing/sort/range. |
@@ -257,25 +228,23 @@ The logical data model (`thinghound-data-model.md`) uses database-agnostic types
 
 `Decimal` is exact everywhere (never `REAL`), but its SQLite encoding depends on the value's role. There are three:
 
-1. **Attribute values** — `item_attribute_value.value`, `item_attribute_component_value.value`, `instance_measurement.value`, `series_attribute_default.value`, `datasheet_extraction.value`. **Dual-column** `*_scaled INTEGER` + `*_exact TEXT`; `*_scaled` precision is the owning `attribute_definition.scale` (or `attribute_component.scale`). Indexed for parametric search and sort.
+1. **Attribute values** — `item_attribute_value.value`, `item_attribute_component_value.value`, `instance_measurement.value`, `series_attribute_default.value`, `datasheet_extraction.value`. **Dual-column** `*_scaled INTEGER` + `*_exact TEXT`; `*_scaled` precision is the owning `attribute.scale` (or `attribute_component.scale`). Indexed for parametric search and sort.
 
-2. **Quantities** — `inventory_event.qty_change`, `item_instance.qty_initial`, `bom_line.qty_per`, `build.qty_built`, `price_break.qty_min`/`qty_max`, `vendor_offer.moq`/`order_multiple`/`qty_available`, `offer_history.qty_available`, `invoice_line.qty`, `item.reorder_point`/`reorder_qty`/`safety_stock`, and the LOCAL read-model `qty_*` columns. **Dual-column** `*_scaled INTEGER` + `*_exact TEXT` at a **fixed quantity scale of 6** (10⁻⁶ precision; max |qty| ≈ 9.2×10¹² in signed int64). The stock read-model aggregates and the costing/BOM logic operate on `*_scaled`.
+2. **Quantities** — `inventory_event.qty_change`, `item_instance.qty_initial`, `bom_line.qty_per_assembly`, `build.qty_built`, `price_break.qty_min`/`qty_max`, `vendor_offer.moq`/`order_multiple`/`qty_available`, `offer_history.qty_available`, `invoice_line.qty`, `item.reorder_point`/`reorder_qty`/`safety_stock`, and the derived read-model `qty_*` columns. **Dual-column** `*_scaled INTEGER` + `*_exact TEXT` at a **fixed quantity scale of 6** (10⁻⁶ precision; max |qty| ≈ 9.2×10¹² in signed int64). The stock read-model aggregates and the costing/BOM logic operate on `*_scaled`.
 
 3. **Factors and rates** — `unit_multiplier.factor`, `prefix.factor`, `fx_rate.rate`. **Single `*_exact TEXT`** canonical-decimal column; **no `*_scaled`.** These are resolved by key (unit symbol; currency + date), never range-searched, and a fixed scaled-int cannot hold the SI prefix factor range within signed int64 (e.g. quetta 10³⁰ vs quecto 10⁻³⁰ have no common scale that fits). The model field stays `Decimal`; the mapper parses the text to `Decimal`/`Fraction`.
 
 > The fixed quantity scale (6) is a project constant defined in code (e.g. `value/quantity.py`), not per row.
 
-### SQLite-Specific Physical Constraints
+### SQLite-Specific Physical Rules
 
-When authoring SQLite DDL for CRR and LOG tables the mapper must follow cr-sqlite compatibility rules (see `docs/dev/crsqlite-spike-findings.md`). These are physical constraints of the SQLite + cr-sqlite substrate — not logical model concerns:
+Physical rules of the libSQL/SQLite substrate — not logical model concerns:
 
-- Every non-PK `NOT NULL` column must have a `DEFAULT` value. (`crsql_as_crr` rejects tables without defaults on NOT NULL columns.)
-- No cross-column `CHECK` constraints. Column changesets apply independently; a cross-column check may fire on a partial changeset and reject a valid remote write. Enforce such invariants at the application layer.
-- Single-column `CHECK` constraints are acceptable if conservative.
-- No `AUTOINCREMENT`. No `REAL` columns.
-- Temporal columns (`Timestamp`, `Date`) are stored as `INTEGER` epoch values (epoch milliseconds, UTC — see §9), never `TEXT`. The mapper encodes/decodes at the storage boundary. `HLC` remains `TEXT`.
-- Schema changes to CRR/LOG tables use `crsql_begin_alter` / `crsql_commit_alter`.
-- The CI guard (`scripts/check_crr_rules.py`) enforces these rules on every migration file before merge.
+- **PKs:** operational/transactional tables use a `UUID` PK and are `WITHOUT ROWID`; structure/master-data tables use a DB-generated `INTEGER PRIMARY KEY` (normal rowid table). `AUTOINCREMENT`/sequences are permitted where useful.
+- **Foreign keys are enforced** (`PRAGMA foreign_keys = ON`). Real `REFERENCES` clauses in DDL.
+- No `REAL` columns (the no-float rule). `Decimal`/`Money` use the encodings above.
+- Cross-column and single-column `CHECK` constraints are both permitted.
+- Temporal columns (`Timestamp`, `Date`) are stored as `INTEGER` epoch values (epoch milliseconds, UTC — see the table above), never `TEXT`. The mapper encodes/decodes at the storage boundary. `HLC` remains `TEXT`.
 
 ---
 
@@ -284,8 +253,9 @@ When authoring SQLite DDL for CRR and LOG tables the mapper must follow cr-sqlit
 Coding standards are defined in `coding_standards.md` (root) with verbose detail in `docs/dev/standards-*.md` and compact agent-directed versions in `docs/dev/agent/standards-*.md`. CLAUDE.md contains task-routing rules directing agents to load the relevant compact standards file before working in each domain. Agents must read the relevant standards file before writing any code in that domain.
 
 Key invariants (always load-bearing, not subject to debate):
-- No floating-point anywhere — all domain values are `Decimal`; all money is `Money`. Physical encoding is DBMS-specific (see Type Mapping below) but is never a float.
-- `UUIDv7` for all ID fields in domain models (validates version byte); canonical string only at the bridge boundary.
-- `foreign_keys = OFF` on every SQLite connection (cr-sqlite requirement; referential integrity is application-enforced).
-- All SQL lives in aggregate mappers. No SQL in service, domain, or UI code.
-- All SQL is parameterized. No string interpolation of values.
+- No floating-point anywhere — all domain values are `Decimal`; all money is `Money`. Physical encoding is DBMS-specific (see Type Mapping above) but is never a float.
+- Integer `id` PKs for structure/master-data tables; `UUIDv7` `uuid` PKs for operational/transactional tables. FK column names signal the referenced PK type (`_id` / `_uuid`). Canonical UUID string only at the bridge boundary.
+- Foreign keys enforced (`foreign_keys = ON`).
+- No column name ends with a preposition (`created_ts`, not `created_at`).
+- SQL is built by the model-aware query component. No SQL in service, domain, or UI code; no hand-written named SQL constants.
+- All SQL is parameterized; identifiers come only from metadata.
