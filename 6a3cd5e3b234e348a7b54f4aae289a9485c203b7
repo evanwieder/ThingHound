@@ -1,0 +1,15 @@
+{
+    "version": "0.1.0",
+    "id": "33e6a298-0ae3-49f9-affc-8fdcbd129307",
+    "timestamp": "2026-06-06T01:47:36.888969Z",
+    "vcs": {
+        "type": "git",
+        "revision": "6a3cd5e3b234e348a7b54f4aae289a9485c203b7",
+        "origin": "github",
+        "repository": "https://github.com/evanwieder/ThingHound.git"
+    },
+    "tool": {
+        "name": "chatter-cli"
+    },
+    "files": []
+}
