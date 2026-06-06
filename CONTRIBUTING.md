@@ -12,7 +12,7 @@ uv run pytest     # run the test suite
 uv run ruff check # lint
 ```
 
-The cr-sqlite extension binary is not tracked in the repository. Download the appropriate binary for your platform from the vlcn-io/cr-sqlite releases and place it at `.local/crsqlite/crsqlite` (see `docs/dev/crsqlite-spike-findings.md` for the pinned version).
+The database is libSQL/Turso (embedded local replica). No loadable database extension binary is required for core development.
 
 ---
 
@@ -49,11 +49,11 @@ The `docs/dev/agent/` files are compact distillations for AI agents. Every rule 
 
 See `docs/specs/` for the full specification set:
 - `thinghound-functional-spec.md` — requirements, definitions, UI/UX, business rules, API, roadmap
-- `thinghound-data-model.md` — all tables, columns, sync classes, indexes, migrations
+- `thinghound-data-model.md` — all tables, columns, indexes, migrations
 - `thinghound-architecture.md` — stack, persistence layers, sync design, testing strategy
 
 ---
 
 ## CI
 
-CI runs on every push: `ruff` linting, `pytest` suite, and the CRR-rules guard that validates all migration files against cr-sqlite compatibility requirements. All three must pass before a PR can merge.
+CI runs on every push: `ruff` linting and the `pytest` suite. Both must pass before a PR can merge.

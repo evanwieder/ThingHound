@@ -20,7 +20,7 @@ Starting implementation before a test exists is a process violation. If a behavi
 
 Integration tests hit a real SQLite database. The database layer is never mocked.
 
-**Why:** mocking the database validates that mock behavior matches expected behavior, not that the actual SQL is correct. Schema migrations, SQL semantics, FTS5 behavior, cr-sqlite constraints, and trigger logic cannot be verified against a mock. Past experience has shown that mock/production divergence masks real bugs silently.
+**Why:** mocking the database validates that mock behavior matches expected behavior, not that the actual SQL is correct. Schema migrations, SQL semantics, FTS5 behavior, foreign-key enforcement, and trigger logic cannot be verified against a mock. Past experience has shown that mock/production divergence masks real bugs silently.
 
 ```python
 # Correct — real in-memory database
@@ -57,7 +57,7 @@ Each test has a single assertion focus. A test named `test_deleted_dimension_exc
 # Correct — one behavior
 def test_deleted_dimension_excluded_from_list(conn):
     mapper = UnitDimensionMapper()
-    dim = make_dimension(deleted_at="2026-01-01T00:00:00Z")
+    dim = make_dimension(deleted_ts="2026-01-01T00:00:00Z")
     mapper.add(conn, dim)
     result = mapper.list_active(conn)
     assert dim.id not in [d.id for d in result]
@@ -79,7 +79,7 @@ Test names describe the behavior being verified, not the implementation or the m
 test_deleted_dimension_excluded_from_list
 test_scale_change_recomputes_value_scaled_from_value_exact
 test_individuate_event_nets_to_zero
-test_two_offline_skus_quarantined_after_merge
+test_stock_correct_when_aggregation_never_ran
 
 # Wrong — describes implementation
 test_list_dimensions
@@ -102,19 +102,18 @@ Each test function is independent. The fixture provides isolation; tests must no
 Every migration must be tested by:
 1. Applying all migrations to a fresh in-memory database and verifying the final schema.
 2. Verifying the migration's checksum is stable (modifying an applied migration is an error).
-3. The CRR-rules CI guard verifying no cr-sqlite compatibility violations exist in the migration SQL.
 
 ---
 
-## Sync and Merge Tests
+## Read-Model Correctness Tests
 
-Sync-correctness tests create two in-memory databases, apply operations to each independently, exchange cr-sqlite changesets, and verify the merged state satisfies all invariants. These tests are the authoritative verification that CRDT conflict policies are correct.
+The read model keeps a materialized snapshot up to a watermark and folds the event tail past it on every read. Tests must verify that the read result is correct regardless of when aggregation last ran.
 
 Key scenarios to cover:
-- Two devices create the same SKU offline → post-merge quarantine fires.
-- Concurrent edits to the same item attribute → LWW resolves deterministically.
-- Partial INDIVIDUATE group delivered in two sync rounds → integrity check tolerates, then passes once complete.
-- Post-merge read-model rebuild produces results identical to trigger-maintained state.
+- Stock read with events past the watermark equals a full fold from scratch (consistency oracle).
+- Current value is correct when aggregation has never run (snapshot empty, all events in the tail).
+- Advancing the watermark (compaction) does not change any read result.
+- Measurements with equal or skewed `measured_ts` resolve to a stable current value by `(measured_ts, hlc, uuid)`.
 
 ---
 

@@ -48,7 +48,7 @@ Google-style docstrings are required for every module, class, function, and meth
 **Class docstring** — describe the class purpose and any non-obvious invariants:
 ```python
 class SchemaRegistryMapper:
-    """Aggregate mapper for unit dimensions, multipliers, and attribute definitions.
+    """Aggregate mapper for unit dimensions, multipliers, and attributes.
 
     Owns all SQL for the schema registry tables. The physical schema is an
     implementation detail of this class; no consumer references table names.
@@ -57,12 +57,12 @@ class SchemaRegistryMapper:
 
 **Function/method docstring** — summary line, then `Args:`, `Returns:`, `Raises:` as applicable. Omit sections that are genuinely empty.
 ```python
-def get_dimension(self, conn: sqlite3.Connection, id: uuid.UUID) -> UnitDimension | None:
+def get_dimension(self, conn: sqlite3.Connection, id: int) -> UnitDimension | None:
     """Retrieve a UnitDimension by ID.
 
     Args:
-        conn: Active SQLite connection.
-        id: The dimension ID as a UUIDv7.
+        conn: Active database connection.
+        id: The dimension's integer ID.
 
     Returns:
         The UnitDimension if found, None if the ID does not exist or is soft-deleted.
@@ -101,10 +101,9 @@ class UnitDimension(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    id: UUIDv7
+    id: int            # structure/master-data table → integer PK
     name: str
     base_unit: str
-    deleted_at: str | None = None
 ```
 
 ---
@@ -116,13 +115,13 @@ No bare `except:` or `except Exception:` that swallows the error. Catch specific
 ```python
 # Correct
 try:
-    conn.execute(self._INSERT, params)
+    conn.execute(insert_sql, params)
 except sqlite3.IntegrityError:
     raise DuplicateSkuError(sku) from None
 
 # Wrong — swallows everything
 try:
-    conn.execute(self._INSERT, params)
+    conn.execute(insert_sql, params)
 except Exception:
     pass
 ```
