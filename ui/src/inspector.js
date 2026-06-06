@@ -1,11 +1,10 @@
 const fallbackTabs = [
-  "Attributes",
-  "Stock & Events",
-  "Instances",
+  "Part Details",
+  "Stock History",
+  "Parameters",
   "Vendors",
   "Alternates",
-  "BOM/Where-used",
-  "Simulation"
+  "BOM/Where-used"
 ];
 
 function buildToolbarButton(label, { title } = {}) {
@@ -40,7 +39,7 @@ function createSummary() {
 
   const subtitle = document.createElement("div");
   subtitle.className = "inspector-subtitle";
-  subtitle.textContent = "";
+  subtitle.textContent = "No item selected";
 
   const meta = document.createElement("div");
   meta.className = "inspector-meta";
@@ -87,18 +86,33 @@ export function renderInspectorSummary(target, item) {
   const subtitle = document.createElement("div");
   subtitle.className = "inspector-subtitle";
   const subtitleParts = [];
+  if (item?.sku) {
+    subtitleParts.push(item.sku);
+  }
   if (item?.category) {
     subtitleParts.push(item.category);
   }
-  if (item?.hero) {
-    subtitleParts.push(item.hero);
+  if (item?.part_number) {
+    subtitleParts.push(`MPN ${item.part_number}`);
   }
   subtitle.textContent = subtitleParts.join(" \u2022 ");
 
   const meta = document.createElement("div");
   meta.className = "inspector-meta";
-  const onHand = item?.on_hand?.display ?? item?.on_hand ?? item?.onHand ?? "-";
-  meta.textContent = `On hand ${onHand}`;
+  const stock = item?.stock ?? item?.on_hand ?? "-";
+  const status = item?.status ?? "";
+  const footprint = item?.footprint ?? "";
+  const metaParts = [];
+  if (stock) {
+    metaParts.push(`Stock ${stock}`);
+  }
+  if (status) {
+    metaParts.push(status);
+  }
+  if (footprint) {
+    metaParts.push(footprint);
+  }
+  meta.textContent = metaParts.join(" \u2022 ");
 
   const header = document.createElement("div");
   header.className = "inspector-header";
@@ -120,16 +134,29 @@ export function initInspector(toolbarTarget, bodyTarget, bridgeApi) {
 
   const applyItem = (item, tabs) => {
     title.textContent = item.name ?? "Select an item";
-    const parts = [];
+    const subtitleParts = [];
+    if (item.sku) {
+      subtitleParts.push(item.sku);
+    }
     if (item.category) {
-      parts.push(item.category);
+      subtitleParts.push(item.category);
     }
-    if (item.hero) {
-      parts.push(item.hero);
+    if (item.part_number) {
+      subtitleParts.push(`MPN ${item.part_number}`);
     }
-    subtitle.textContent = parts.join(" \u2022 ");
-    const onHand = item.on_hand?.display ?? item.on_hand ?? item.onHand ?? "-";
-    meta.textContent = `On hand ${onHand}`;
+    subtitle.textContent = subtitleParts.join(" \u2022 ");
+    const metaParts = [];
+    const stock = item.stock ?? item.on_hand ?? item.onHand;
+    if (stock != null && stock !== "") {
+      metaParts.push(`Stock ${stock}`);
+    }
+    if (item.status) {
+      metaParts.push(item.status);
+    }
+    if (item.footprint) {
+      metaParts.push(item.footprint);
+    }
+    meta.textContent = metaParts.join(" \u2022 ");
     renderTabs(tabContainer, content, tabs, item.name ?? "item");
   };
 
@@ -137,9 +164,12 @@ export function initInspector(toolbarTarget, bodyTarget, bridgeApi) {
     const item = event.detail;
     const fallback = {
       name: item.name,
+      sku: item.sku,
       category: item.category,
-      hero: item.hero,
-      on_hand: item.on_hand
+      part_number: item.part_number,
+      stock: item.stock,
+      status: item.status,
+      footprint: item.footprint
     };
     applyItem(fallback, fallbackTabs);
 
@@ -152,9 +182,12 @@ export function initInspector(toolbarTarget, bodyTarget, bridgeApi) {
       const tabNames = Object.keys(payload.tabs ?? {});
       const enriched = {
         name: summary.name ?? item.name,
+        sku: summary.sku ?? item.sku,
         category: summary.category ?? item.category,
-        hero: summary.hero ?? item.hero,
-        on_hand: summary.on_hand ?? item.on_hand
+        part_number: summary.part_number ?? item.part_number,
+        stock: summary.stock ?? item.stock,
+        status: summary.status ?? item.status,
+        footprint: summary.footprint ?? item.footprint
       };
       applyItem(enriched, tabNames.length > 0 ? tabNames : fallbackTabs);
     } catch (error) {

@@ -62,7 +62,8 @@ export function buildGridOptions({ rows, displayColumns, onRowSelected }) {
     virtualDom: true,
     rowHeight: 22,
     columnHeaderVertAlign: "middle",
-    groupBy: "category",
+    groupBy: "category_path_display",
+    groupHeader: (value, count) => `<span class="group-path">${value}</span> <span class="group-count">(${count} part${count === 1 ? "" : "s"})</span>`,
     columns: buildColumns(displayColumns),
     rowClick: (_event, row) => onRowSelected(row.getData())
   };
@@ -106,11 +107,12 @@ export async function initGrid(target, bridgeApi) {
 
   if (displayColumns.length === 0) {
     displayColumns = [
-      { key: "hero", title: "Hero" },
       { key: "name", title: "Name" },
-      { key: "category", title: "Category" },
-      { key: "value", title: "Value" },
-      { key: "on_hand", title: "On Hand" }
+      { key: "sku", title: "SKU" },
+      { key: "description", title: "Description" },
+      { key: "stock", title: "Stock" },
+      { key: "status", title: "Status" },
+      { key: "footprint", title: "Footprint" }
     ];
   }
 
