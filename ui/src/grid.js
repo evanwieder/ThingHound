@@ -1,15 +1,101 @@
 import { TabulatorFull as Tabulator } from "tabulator-tables";
 
-function buildColumns(displayColumns) {
+const THUMBNAIL_WIDTH = 36;
+
+function buildToolbarButton(label, { title } = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pane-toolbar-btn";
+  button.textContent = label;
+  if (title != null) {
+    button.title = title;
+  }
+  return button;
+}
+
+function buildToolbarSelect(label, options) {
+  const wrap = document.createElement("label");
+  wrap.className = "pane-toolbar-select";
+
+  const text = document.createElement("span");
+  text.className = "pane-toolbar-label";
+  text.textContent = label;
+  wrap.appendChild(text);
+
+  const select = document.createElement("select");
+  for (const value of options) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  }
+  wrap.appendChild(select);
+  return wrap;
+}
+
+export function buildColumns(displayColumns) {
   const base = [
-    { title: "Thumb", field: "thumbnail", width: 64, hozAlign: "center", formatter: "plaintext" }
+    {
+      title: "",
+      field: "thumbnail",
+      width: THUMBNAIL_WIDTH,
+      hozAlign: "center",
+      headerSort: false,
+      resizable: false,
+      formatter: "plaintext"
+    }
   ];
-  const dynamic = displayColumns.map((column) => ({
-    title: column.title,
-    field: column.key,
-    headerSort: true
-  }));
+  const dynamic = displayColumns.map((column) => {
+    if (column.key === "stock") {
+      return {
+        title: column.title,
+        field: column.key,
+        headerSort: true,
+        hozAlign: "right",
+        formatter: (cell) => {
+          const value = cell.getValue();
+          return value === "" || value == null ? "" : `${value} pcs`;
+        }
+      };
+    }
+    return {
+      title: column.title,
+      field: column.key,
+      headerSort: true
+    };
+  });
   return [...base, ...dynamic];
+}
+
+export function buildGridOptions({ rows, displayColumns }) {
+  return {
+    data: rows,
+    layout: "fitColumns",
+    reactiveData: true,
+    movableColumns: true,
+    virtualDom: true,
+    rowHeight: 22,
+    columnHeaderVertAlign: "middle",
+    groupBy: "category_path_display",
+    groupHeader: (value, count) =>
+      `<span class="group-path">${value}</span> <span class="group-count">(${count} part${count === 1 ? "" : "s"})</span>`,
+    columns: buildColumns(displayColumns)
+  };
+}
+
+export function renderGridToolbar(target) {
+  const viewSelect = buildToolbarSelect("View", ["Default", "Electrical", "Mechanical"]);
+  const columnsButton = buildToolbarButton("Columns");
+  const editViewsButton = buildToolbarButton("Edit Views");
+
+  target.replaceChildren(columnsButton, viewSelect, editViewsButton);
+
+  columnsButton.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent("grid:request-columns"));
+  });
+  editViewsButton.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent("grid:request-edit-views"));
+  });
 }
 
 function emitSelection(rowData) {
@@ -35,23 +121,33 @@ export async function initGrid(target, bridgeApi) {
 
   if (displayColumns.length === 0) {
     displayColumns = [
-      { key: "hero", title: "Hero" },
       { key: "name", title: "Name" },
-      { key: "category", title: "Category" },
-      { key: "value", title: "Value" },
-      { key: "on_hand", title: "On Hand" }
+      { key: "sku", title: "SKU" },
+      { key: "description", title: "Description" },
+      { key: "stock", title: "Stock" },
+      { key: "status", title: "Status" },
+      { key: "footprint", title: "Footprint" }
     ];
   }
 
-  const table = new Tabulator(target, {
-    data: rows,
-    layout: "fitColumns",
-    reactiveData: true,
-    movableColumns: true,
-    virtualDom: true,
-    groupBy: "category",
-    columns: buildColumns(displayColumns),
-    rowClick: (_event, row) => emitSelection(row.getData())
+  const table = new Tabulator(target, buildGridOptions({ rows, displayColumns }));
+
+  table.on("rowClick", (_event, row) => emitSelection(row.getData()));
+  table.on("rowDblClick", (_event, row) => emitSelection(row.getData()));
+
+  // Backup click delegation — if Tabulator's rowClick fails to fire for any
+  // reason (e.g. when the user clicks a sub-element that swallows the event),
+  // find the row from the DOM and emit the selection manually.
+  target.addEventListener("click", (event) => {
+    const rowEl = event.target?.closest(".tabulator-row");
+    if (rowEl == null) {
+      return;
+    }
+    const tabulatorRow = table.getRow(rowEl);
+    const data = tabulatorRow?.getData();
+    if (data != null) {
+      emitSelection(data);
+    }
   });
 
   const reloadRows = async (filters = {}) => {

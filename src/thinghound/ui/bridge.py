@@ -89,31 +89,54 @@ class Bridge:
 
         rows = fixtures.GRID_ROWS
         if category_id and category_id != "root":
-            needle = category_id.rstrip("s")
-            rows = [row for row in rows if str(row["category"]).lower().startswith(needle)]
+            rows = [
+                row
+                for row in rows
+                if category_id in [str(cid).lower() for cid in row.get("category_path", [])]
+            ]
         if quick_search:
             rows = [
                 row
                 for row in rows
-                if quick_search in str(row["name"]).lower()
-                or quick_search in str(row["category"]).lower()
-                or quick_search in str(row["value"]).lower()
+                if quick_search in str(row.get("name", "")).lower()
+                or quick_search in str(row.get("sku", "")).lower()
+                or quick_search in str(row.get("category", "")).lower()
+                or quick_search in str(row.get("description", "")).lower()
             ]
 
         return {"rows": rows, "total": len(rows)}
 
     def _mock_get_inspector_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Return summary and tab payload for selected item."""
+        """Return summary, properties, and tab payload for selected item."""
         item_id = payload.get("itemId")
         for row in fixtures.GRID_ROWS:
             if row["id"] == item_id:
                 return {
                     "summary": {
                         "name": row["name"],
+                        "sku": row["sku"],
                         "category": row["category"],
-                        "on_hand": row["on_hand"]["display"],
-                        "hero": row["hero"],
+                        "stock": row["stock"],
+                        "status": row["status"],
+                        "footprint": row["footprint"],
+                        "part_number": row["part_number"],
+                        "description": row["description"],
                     },
+                    "properties": {
+                        "Internal ID": row["sku"],
+                        "Name": row["name"],
+                        "SKU": row["sku"],
+                        "Part Number": row["part_number"],
+                        "Category": row["category"],
+                        "Description": row["description"],
+                        "Footprint": row["footprint"],
+                        "Status": row["status"],
+                        "Stock Level": row["stock"],
+                        "Stock Mode": row["stock_mode"],
+                        "Instance Kind": row["instance_kind"],
+                        "Markings": row["markings"] or "—",
+                    },
+                    "attributes": row.get("attributes", []),
                     "tabs": {
                         tab: {"content": f"{tab} fixture content for {row['name']}"}
                         for tab in fixtures.INSPECTOR_TABS

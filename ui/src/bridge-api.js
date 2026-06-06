@@ -45,7 +45,24 @@ export function createBridgeApi(pywebviewApi) {
       if (response != null) {
         return response;
       }
-      return { rows: gridRows, total: gridRows.length };
+      const categoryId = String(payload?.categoryId ?? "").toLowerCase();
+      const quickSearch = String(payload?.quickSearch ?? "").toLowerCase().trim();
+      let rows = gridRows;
+      if (categoryId && categoryId !== "root") {
+        rows = rows.filter((row) =>
+          (row.category_path ?? []).map((id) => String(id).toLowerCase()).includes(categoryId)
+        );
+      }
+      if (quickSearch) {
+        rows = rows.filter(
+          (row) =>
+            quickSearch in String(row.name ?? "").toLowerCase() ||
+            quickSearch in String(row.sku ?? "").toLowerCase() ||
+            quickSearch in String(row.category ?? "").toLowerCase() ||
+            quickSearch in String(row.description ?? "").toLowerCase()
+        );
+      }
+      return { rows, total: rows.length };
     },
     async get_inspector_payload(payload = {}) {
       const response = await call("get_inspector_payload", payload);
@@ -56,13 +73,32 @@ export function createBridgeApi(pywebviewApi) {
       return {
         summary: {
           name: row?.name ?? "",
+          sku: row?.sku ?? "",
           category: row?.category ?? "",
-          on_hand: row?.onHand ?? "",
-          hero: row?.hero ?? "",
+          stock: row?.stock ?? "",
+          status: row?.status ?? "",
+          footprint: row?.footprint ?? "",
+          part_number: row?.part_number ?? "",
+          description: row?.description ?? "",
         },
+        properties: {
+          "Internal ID": row?.sku ?? "",
+          Name: row?.name ?? "",
+          SKU: row?.sku ?? "",
+          "Part Number": row?.part_number ?? "",
+          Category: row?.category ?? "",
+          Description: row?.description ?? "",
+          Footprint: row?.footprint ?? "",
+          Status: row?.status ?? "",
+          "Stock Level": row?.stock ?? "",
+          "Stock Mode": row?.stock_mode ?? "",
+          "Instance Kind": row?.instance_kind ?? "",
+          Markings: row?.markings || "—"
+        },
+        attributes: row?.attributes ?? [],
         tabs: Object.fromEntries(
-          inspectorTabs.map((tab) => [tab, { content: `${tab} fixture content for ${row?.name ?? "item"}` }]),
-        ),
+          inspectorTabs.map((tab) => [tab, { content: `${tab} fixture content for ${row?.name ?? "item"}` }])
+        )
       };
     },
   };
